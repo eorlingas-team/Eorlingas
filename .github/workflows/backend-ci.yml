@@ -50,7 +50,7 @@ jobs:
           done
 
       - name: Run backend tests
-        run: npm test || true # Temporary true, will be removed once backend tests are added.
+        run: npm test
         working-directory: backend
         env:
           # Inject test environment variables
