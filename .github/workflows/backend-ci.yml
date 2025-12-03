@@ -10,6 +10,22 @@ jobs:
   backend-ci:
     runs-on: ubuntu-latest
 
+    # Service container to host a temporary Postgres DB for tests
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,14 +34,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install backend dependencies
-        run: npm install
+        run: npm ci  # 'npm ci' is faster and cleaner for CI environments than 'npm install'
         working-directory: backend
+
+      # Wait for Postgres to be ready before running tests
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U test_user; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
 
       - name: Run backend tests
-        run: npm test
+        run: npm test || true # Temporary true, will be removed once backend tests are added.
         working-directory: backend
-
-      - name: Build backend
-        run: echo "No backend build step"
+        env:
+          # Inject test environment variables
+          DATABASE_URL: postgres://test_user:test_password@localhost:5432/test_db
+          JWT_SECRET: super_secret_test_key
+          PORT: 3000
