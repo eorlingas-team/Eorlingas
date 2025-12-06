@@ -141,6 +141,62 @@ const validateLogin = (data) => {
 };
 
 /**
+ * Validate profile update request
+ * @param {Object} data - Profile update data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateProfileUpdate = (data) => {
+  const errors = [];
+
+  if (data.fullName !== undefined) {
+    if (!data.fullName || typeof data.fullName !== 'string') {
+      errors.push('Full name must be a non-empty string');
+    } else {
+      const trimmed = data.fullName.trim();
+      if (trimmed.length === 0) {
+        errors.push('Full name cannot be empty');
+      } else if (trimmed.length > 255) {
+        errors.push('Full name must be at most 255 characters long');
+      }
+    }
+  }
+
+  if (data.phoneNumber !== undefined && data.phoneNumber !== null) {
+    if (data.phoneNumber !== '' && !isValidPhoneNumber(data.phoneNumber)) {
+      errors.push('Invalid phone number format');
+    }
+  }
+
+  if (data.notificationPreferences !== undefined) {
+    if (
+      typeof data.notificationPreferences !== 'object' ||
+      data.notificationPreferences === null
+    ) {
+      errors.push('notificationPreferences must be an object');
+    } else {
+      if (
+        data.notificationPreferences.emailNotifications !== undefined &&
+        typeof data.notificationPreferences.emailNotifications !== 'boolean'
+      ) {
+        errors.push('emailNotifications must be a boolean');
+      }
+
+      if (
+        data.notificationPreferences.webNotifications !== undefined &&
+        typeof data.notificationPreferences.webNotifications !== 'boolean'
+      ) {
+        errors.push('webNotifications must be a boolean');
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
  * Validate password change request
  * @param {Object} data - Password change data
  * @returns {Object} { valid: boolean, errors: Array<string> }
@@ -182,6 +238,7 @@ module.exports = {
   isValidPhoneNumber,
   validateRegistration,
   validateLogin,
+  validateProfileUpdate,
   validatePasswordChange,
 };
 

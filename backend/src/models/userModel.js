@@ -103,6 +103,7 @@ const update = async (userId, updates) => {
       'verification_token',
       'verification_token_expiry',
       'last_login',
+      'notification_preferences',
     ];
 
     const updateFields = [];
@@ -112,7 +113,11 @@ const update = async (userId, updates) => {
     Object.keys(updates).forEach((key) => {
       if (allowedFields.includes(key)) {
         const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
-        updateFields.push(`${dbKey} = $${paramIndex}`);
+        if (key === 'notification_preferences') {
+          updateFields.push(`${dbKey} = $${paramIndex}::jsonb`);
+        } else {
+          updateFields.push(`${dbKey} = $${paramIndex}`);
+        }
         values.push(updates[key]);
         paramIndex++;
       }
