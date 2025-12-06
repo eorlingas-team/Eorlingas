@@ -5,6 +5,7 @@ const pool = require("./config/db");
 
 // Routes
 const authRoutes = require("./routes/authRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 
 const app = express();
 
@@ -29,5 +30,6 @@ app.get("/health/db", async (req, res) => {
 
 // API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
 
 module.exports = app;
