@@ -231,6 +231,55 @@ const validatePasswordChange = (data) => {
   };
 };
 
+/**
+ * Validate forgot password request
+ * @param {Object} data - Forgot password data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateForgotPassword = (data) => {
+  const errors = [];
+
+  if (!data.email || !isValidEmail(data.email)) {
+    errors.push('Valid ITU email address is required');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validate reset password request
+ * @param {Object} data - Reset password data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateResetPassword = (data) => {
+  const errors = [];
+
+  if (!data.token) {
+    errors.push('Reset token is required');
+  }
+
+  if (!data.newPassword) {
+    errors.push('New password is required');
+  } else {
+    const passwordValidation = validatePassword(data.newPassword);
+    if (!passwordValidation.valid) {
+      errors.push(passwordValidation.message);
+    }
+  }
+
+  if (data.newPassword !== data.confirmPassword) {
+    errors.push('New passwords do not match');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
 module.exports = {
   isValidEmail,
   validatePassword,
@@ -240,5 +289,7 @@ module.exports = {
   validateLogin,
   validateProfileUpdate,
   validatePasswordChange,
+  validateForgotPassword,
+  validateResetPassword,
 };
 
