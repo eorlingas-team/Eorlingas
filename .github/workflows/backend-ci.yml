@@ -37,6 +37,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
       - name: Install backend dependencies
         run: npm ci  # 'npm ci' is faster and cleaner for CI environments than 'npm install'
         working-directory: backend
@@ -48,12 +51,17 @@ jobs:
             echo "Waiting for postgres..."
             sleep 2
           done
+          echo "PostgreSQL is ready!"
 
       - name: Run backend tests
         run: npm test
         working-directory: backend
         env:
-          # Inject test environment variables
+          NODE_ENV: test
           DATABASE_URL: postgres://test_user:test_password@localhost:5432/test_db
           JWT_SECRET: super_secret_test_key
+          JWT_REFRESH_SECRET: super_secret_refresh_test_key
+          JWT_EXPIRES_IN: 86400
+          JWT_REFRESH_EXPIRES_IN: 604800
           PORT: 3000
+

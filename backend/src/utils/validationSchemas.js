@@ -1,0 +1,187 @@
+/**
+ * Validation schemas for request validation
+ * Simple validation functions (can be replaced with Joi or similar library later)
+ */
+
+/**
+ * Validate email format and domain
+ * @param {string} email - Email to validate
+ * @returns {boolean} True if valid
+ */
+const isValidEmail = (email) => {
+  const emailRegex = /^[A-Za-z0-9._%+-]+@itu\.edu\.tr$/i;
+  return emailRegex.test(email);
+};
+
+/**
+ * Validate password strength
+ * @param {string} password - Password to validate
+ * @returns {Object} { valid: boolean, message?: string }
+ */
+const validatePassword = (password) => {
+  if (!password || password.length < 8) {
+    return { valid: false, message: 'Password must be at least 8 characters long' };
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one uppercase letter' };
+  }
+
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one lowercase letter' };
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one number' };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Validate student number format
+ * @param {string} studentNumber
+ * @returns {boolean} True if valid
+ */
+const isValidStudentNumber = (studentNumber) => {
+  if (!studentNumber) return true;
+  const trimmed = String(studentNumber).trim();
+  return /^\d{6,12}$/.test(trimmed);
+};
+
+/**
+ * Validate phone number format
+ * @param {string} phoneNumber - Phone number to validate
+ * @returns {boolean} True if valid
+ */
+const isValidPhoneNumber = (phoneNumber) => {
+  if (!phoneNumber) return true;
+  
+  const cleaned = phoneNumber.replace(/[\s\-\(\)]/g, '');
+  
+  const internationalFormat = /^\+\d{1,3}\d{7,15}$/;
+  
+  const turkishWithCountryCode = /^\+90[5]\d{9}$/;
+  
+  const turkishWithZero = /^0[5]\d{9}$/;
+  
+  const turkishDirect = /^[5]\d{9}$/;
+  
+  return (
+    internationalFormat.test(cleaned) ||
+    turkishWithCountryCode.test(cleaned) ||
+    turkishWithZero.test(cleaned) ||
+    turkishDirect.test(cleaned)
+  );
+};
+
+/**
+ * Validate registration request
+ * @param {Object} data - Registration data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateRegistration = (data) => {
+  const errors = [];
+
+  if (!data.email || !isValidEmail(data.email)) {
+    errors.push('Valid ITU email address (@itu.edu.tr) is required');
+  }
+
+  if (!data.password) {
+    errors.push('Password is required');
+  } else {
+    const passwordValidation = validatePassword(data.password);
+    if (!passwordValidation.valid) {
+      errors.push(passwordValidation.message);
+    }
+  }
+
+  if (data.password !== data.passwordConfirmation) {
+    errors.push('Passwords do not match');
+  }
+
+  if (!data.fullName || data.fullName.trim().length < 2) {
+    errors.push('Full name must be at least 2 characters long');
+  }
+
+  if (data.studentNumber && !isValidStudentNumber(data.studentNumber)) {
+    errors.push('Invalid student number format');
+  }
+
+  if (data.phoneNumber && !isValidPhoneNumber(data.phoneNumber)) {
+    errors.push('Invalid phone number format');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validate login request
+ * @param {Object} data - Login data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateLogin = (data) => {
+  const errors = [];
+
+  if (!data.email || !isValidEmail(data.email)) {
+    errors.push('Valid ITU email address is required');
+  }
+
+  if (!data.password) {
+    errors.push('Password is required');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validate password change request
+ * @param {Object} data - Password change data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validatePasswordChange = (data) => {
+  const errors = [];
+
+  if (!data.currentPassword) {
+    errors.push('Current password is required');
+  }
+
+  if (!data.newPassword) {
+    errors.push('New password is required');
+  } else {
+    const passwordValidation = validatePassword(data.newPassword);
+    if (!passwordValidation.valid) {
+      errors.push(passwordValidation.message);
+    }
+  }
+
+  if (data.newPassword !== data.newPasswordConfirmation) {
+    errors.push('New passwords do not match');
+  }
+
+  if (data.currentPassword === data.newPassword) {
+    errors.push('New password must be different from current password');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+module.exports = {
+  isValidEmail,
+  validatePassword,
+  isValidStudentNumber,
+  isValidPhoneNumber,
+  validateRegistration,
+  validateLogin,
+  validatePasswordChange,
+};
+
