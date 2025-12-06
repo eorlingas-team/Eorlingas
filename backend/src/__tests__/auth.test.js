@@ -338,6 +338,73 @@ describe('Validation Schemas', () => {
       expect(result.errors.some(e => e.includes('match'))).toBe(true);
     });
   });
+
+  describe('validateForgotPassword', () => {
+    it('should validate valid email', () => {
+      const data = { email: 'test@itu.edu.tr' };
+      const result = validationSchemas.validateForgotPassword(data);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject invalid email', () => {
+      const data = { email: 'invalid-email' };
+      const result = validationSchemas.validateForgotPassword(data);
+      expect(result.valid).toBe(false);
+    });
+
+    it('should reject non-ITU email', () => {
+      const data = { email: 'test@gmail.com' };
+      const result = validationSchemas.validateForgotPassword(data);
+      expect(result.valid).toBe(false);
+    });
+  });
+
+  describe('validateResetPassword', () => {
+    it('should validate valid reset password data', () => {
+      const data = {
+        token: 'valid_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'NewPassword123',
+      };
+
+      const result = validationSchemas.validateResetPassword(data);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject missing token', () => {
+      const data = {
+        newPassword: 'NewPassword123',
+        confirmPassword: 'NewPassword123',
+      };
+
+      const result = validationSchemas.validateResetPassword(data);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('token') || e.includes('Reset token'))).toBe(true);
+    });
+
+    it('should reject invalid password format', () => {
+      const data = {
+        token: 'valid_token',
+        newPassword: 'short',
+        confirmPassword: 'short',
+      };
+
+      const result = validationSchemas.validateResetPassword(data);
+      expect(result.valid).toBe(false);
+    });
+
+    it('should reject mismatched passwords', () => {
+      const data = {
+        token: 'valid_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'DifferentPassword123',
+      };
+
+      const result = validationSchemas.validateResetPassword(data);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('match'))).toBe(true);
+    });
+  });
 });
 
 describe('Auth Controller', () => {
@@ -376,6 +443,7 @@ describe('Auth Controller', () => {
       });
       userModel.setVerificationToken.mockResolvedValue(undefined);
       bcrypt.hash.mockResolvedValue('hashed_password');
+      pool.query.mockResolvedValue({ rows: [] }); // For audit log
 
       await authController.register(req, res, next);
 
@@ -459,6 +527,7 @@ describe('Auth Controller', () => {
       userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
       bcrypt.compare.mockResolvedValue(true);
       userModel.updateLastLogin.mockResolvedValue(undefined);
+      userModel.setRefreshToken.mockResolvedValue(undefined);
       pool.query.mockResolvedValue({ rows: [] });
 
       await authController.login(req, res, next);
@@ -663,6 +732,148 @@ describe('Auth Controller', () => {
         })
       );
     });
+
+    it('should verify email successfully with code', async () => {
+      req.body = { email: 'test@itu.edu.tr', code: '123456' };
+
+      const mockUser = {
+        user_id: 1,
+        email: 'test@itu.edu.tr',
+        email_verified: false,
+        status: 'Unverified',
+        verification_token_expiry: new Date(Date.now() + 3600000),
+      };
+
+      userModel.findByEmailAndCode.mockResolvedValue(mockUser);
+      userModel.update.mockResolvedValue({
+        ...mockUser,
+        status: 'Verified',
+        email_verified: true,
+      });
+      userModel.clearVerificationToken.mockResolvedValue(undefined);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(userModel.findByEmailAndCode).toHaveBeenCalledWith('test@itu.edu.tr', '123456');
+      expect(userModel.update).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+        })
+      );
+    });
+
+    it('should reject invalid code format', async () => {
+      req.body = { email: 'test@itu.edu.tr', code: '12345' }; // 5 digits
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: expect.stringContaining('6-digit'),
+          }),
+        })
+      );
+    });
+
+    it('should reject non-numeric code', async () => {
+      req.body = { email: 'test@itu.edu.tr', code: 'abc123' };
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+          }),
+        })
+      );
+    });
+
+    it('should reject code verification without email', async () => {
+      req.body = { code: '123456' };
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: expect.stringContaining('Email is required'),
+          }),
+        })
+      );
+    });
+
+    it('should reject invalid email-code combination', async () => {
+      req.body = { email: 'test@itu.edu.tr', code: '999999' };
+
+      userModel.findByEmailAndCode.mockResolvedValue(null);
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'NOT_FOUND',
+            message: expect.stringContaining('Invalid verification code'),
+          }),
+        })
+      );
+    });
+
+    it('should reject expired code', async () => {
+      req.body = { email: 'test@itu.edu.tr', code: '123456' };
+
+      const mockUser = {
+        user_id: 1,
+        verification_token_expiry: new Date(Date.now() - 3600000), // 1 hour ago
+      };
+
+      userModel.findByEmailAndCode.mockResolvedValue(mockUser);
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: expect.stringContaining('expired'),
+          }),
+        })
+      );
+    });
+
+    it('should reject when neither token nor code provided', async () => {
+      req.body = {};
+
+      await authController.verifyEmail(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: expect.stringContaining('token or code'),
+          }),
+        })
+      );
+    });
   });
 
   describe('refreshToken', () => {
@@ -680,9 +891,11 @@ describe('Auth Controller', () => {
       };
 
       userModel.findById.mockResolvedValue(mockUser);
+      userModel.isRefreshTokenValid.mockResolvedValue(true);
 
       await authController.refreshToken(req, res, next);
 
+      expect(userModel.isRefreshTokenValid).toHaveBeenCalledWith(1, refreshToken);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -690,6 +903,37 @@ describe('Auth Controller', () => {
           data: expect.objectContaining({
             token: expect.any(String),
             expiresIn: expect.any(Number),
+          }),
+        })
+      );
+    });
+
+    it('should reject invalidated refresh token (after logout)', async () => {
+      const payload = { userId: 1, email: 'test@itu.edu.tr', role: 'Student' };
+      const refreshToken = jwtUtils.generateRefreshToken(payload);
+
+      req.body = { refreshToken };
+
+      const mockUser = {
+        user_id: 1,
+        email: 'test@itu.edu.tr',
+        role: 'Student',
+        status: 'Verified',
+      };
+
+      userModel.findById.mockResolvedValue(mockUser);
+      userModel.isRefreshTokenValid.mockResolvedValue(false); // Token invalidated
+
+      await authController.refreshToken(req, res, next);
+
+      expect(userModel.isRefreshTokenValid).toHaveBeenCalledWith(1, refreshToken);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'UNAUTHORIZED',
+            message: expect.stringContaining('invalidated'),
           }),
         })
       );
@@ -778,6 +1022,232 @@ describe('Auth Controller', () => {
           success: false,
           error: expect.objectContaining({
             code: 'NOT_FOUND',
+          }),
+        })
+      );
+    });
+  });
+
+  describe('logout', () => {
+    it('should logout successfully and invalidate refresh token', async () => {
+      req.user = { userId: 1 };
+      userModel.clearRefreshToken.mockResolvedValue(undefined);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await authController.logout(req, res, next);
+
+      expect(userModel.clearRefreshToken).toHaveBeenCalledWith(1);
+      expect(pool.query).toHaveBeenCalled(); // Audit log
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: 'Logged out successfully',
+        })
+      );
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('should send password reset email for existing user', async () => {
+      req.body = { email: 'test@itu.edu.tr' };
+
+      const mockUser = {
+        user_id: 1,
+        email: 'test@itu.edu.tr',
+        full_name: 'Test User',
+      };
+
+      userModel.findByEmail.mockResolvedValue(mockUser);
+      userModel.setPasswordResetToken.mockResolvedValue(undefined);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await authController.forgotPassword(req, res, next);
+
+      expect(userModel.findByEmail).toHaveBeenCalledWith('test@itu.edu.tr');
+      expect(userModel.setPasswordResetToken).toHaveBeenCalled();
+      expect(pool.query).toHaveBeenCalled(); // Audit log
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: expect.stringContaining('password reset link'),
+        })
+      );
+    });
+
+    it('should return success even if user does not exist (security)', async () => {
+      req.body = { email: 'nonexistent@itu.edu.tr' };
+
+      userModel.findByEmail.mockResolvedValue(null);
+
+      await authController.forgotPassword(req, res, next);
+
+      expect(userModel.findByEmail).toHaveBeenCalledWith('nonexistent@itu.edu.tr');
+      expect(userModel.setPasswordResetToken).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: expect.stringContaining('password reset link'),
+        })
+      );
+    });
+
+    it('should reject invalid email format', async () => {
+      req.body = { email: 'invalid-email' };
+
+      await authController.forgotPassword(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+          }),
+        })
+      );
+    });
+
+    it('should return success even on error (security)', async () => {
+      req.body = { email: 'test@itu.edu.tr' };
+
+      userModel.findByEmail.mockRejectedValue(new Error('Database error'));
+
+      await authController.forgotPassword(req, res, next);
+
+      // Should still return success to prevent email enumeration
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+        })
+      );
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should reset password successfully', async () => {
+      req.body = {
+        token: 'valid_reset_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'NewPassword123',
+      };
+
+      const mockUser = {
+        user_id: 1,
+        email: 'test@itu.edu.tr',
+        password_reset_token_expiry: new Date(Date.now() + 3600000),
+      };
+
+      userModel.findByPasswordResetToken.mockResolvedValue(mockUser);
+      userModel.update.mockResolvedValue(mockUser);
+      userModel.clearPasswordResetToken.mockResolvedValue(undefined);
+      bcrypt.hash.mockResolvedValue('new_hashed_password');
+      pool.query.mockResolvedValue({ rows: [] }); // For audit log and notification
+
+      await authController.resetPassword(req, res, next);
+
+      expect(userModel.findByPasswordResetToken).toHaveBeenCalledWith('valid_reset_token');
+      expect(bcrypt.hash).toHaveBeenCalledWith('NewPassword123', 10);
+      expect(userModel.update).toHaveBeenCalled();
+      expect(userModel.clearPasswordResetToken).toHaveBeenCalledWith(1);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: expect.stringContaining('Password reset successfully'),
+        })
+      );
+    });
+
+    it('should reject invalid token', async () => {
+      req.body = {
+        token: 'invalid_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'NewPassword123',
+      };
+
+      userModel.findByPasswordResetToken.mockResolvedValue(null);
+
+      await authController.resetPassword(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'NOT_FOUND',
+            message: expect.stringContaining('Invalid or expired reset token'),
+          }),
+        })
+      );
+    });
+
+    it('should reject expired token', async () => {
+      req.body = {
+        token: 'expired_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'NewPassword123',
+      };
+
+      const mockUser = {
+        user_id: 1,
+        password_reset_token_expiry: new Date(Date.now() - 3600000), // 1 hour ago
+      };
+
+      userModel.findByPasswordResetToken.mockResolvedValue(mockUser);
+
+      await authController.resetPassword(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: expect.stringContaining('expired'),
+          }),
+        })
+      );
+    });
+
+    it('should reject invalid password format', async () => {
+      req.body = {
+        token: 'valid_token',
+        newPassword: 'short',
+        confirmPassword: 'short',
+      };
+
+      await authController.resetPassword(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+          }),
+        })
+      );
+    });
+
+    it('should reject mismatched passwords', async () => {
+      req.body = {
+        token: 'valid_token',
+        newPassword: 'NewPassword123',
+        confirmPassword: 'DifferentPassword123',
+      };
+
+      await authController.resetPassword(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
           }),
         })
       );

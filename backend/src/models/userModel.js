@@ -101,7 +101,11 @@ const update = async (userId, updates) => {
       'status',
       'email_verified',
       'verification_token',
+      'verification_code',
       'verification_token_expiry',
+      'password_reset_token',
+      'password_reset_token_expiry',
+      'refresh_token',
       'last_login',
       'notification_preferences',
     ];
@@ -179,16 +183,17 @@ const findByVerificationToken = async (token) => {
 };
 
 /**
- * Set verification token for user
+ * Set verification token and code for user
  * @param {number} userId
  * @param {string} token - Verification token
+ * @param {string} code - 6-digit verification code
  * @param {Date} expiryDate - Token expiry date
  */
-const setVerificationToken = async (userId, token, expiryDate) => {
+const setVerificationToken = async (userId, token, code, expiryDate) => {
   try {
     await pool.query(
-      'UPDATE users SET verification_token = $1, verification_token_expiry = $2 WHERE user_id = $3',
-      [token, expiryDate, userId]
+      'UPDATE users SET verification_token = $1, verification_code = $2, verification_token_expiry = $3 WHERE user_id = $4',
+      [token, code, expiryDate, userId]
     );
   } catch (error) {
     console.error('Error setting verification token:', error);
@@ -197,17 +202,36 @@ const setVerificationToken = async (userId, token, expiryDate) => {
 };
 
 /**
- * Clear verification token after successful verification
+ * Clear verification token and code after successful verification
  * @param {number} userId
  */
 const clearVerificationToken = async (userId) => {
   try {
     await pool.query(
-      'UPDATE users SET verification_token = NULL, verification_token_expiry = NULL WHERE user_id = $1',
+      'UPDATE users SET verification_token = NULL, verification_code = NULL, verification_token_expiry = NULL WHERE user_id = $1',
       [userId]
     );
   } catch (error) {
     console.error('Error clearing verification token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find user by email and verification code
+ * @param {string} email - User email
+ * @param {string} code - Verification code
+ * @returns {Object|null} User object or null
+ */
+const findByEmailAndCode = async (email, code) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1 AND verification_code = $2',
+      [email.toLowerCase(), code]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    console.error('Error finding user by email and code:', error);
     throw error;
   }
 };
@@ -235,6 +259,116 @@ const getRecentFailedLoginAttempts = async (userId) => {
   }
 };
 
+/**
+ * Find user by password reset token
+ * @param {string} token - Password reset token
+ * @returns {Object|null} User object or null
+ */
+const findByPasswordResetToken = async (token) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM users WHERE password_reset_token = $1',
+      [token]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    console.error('Error finding user by password reset token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Set password reset token for user
+ * @param {number} userId
+ * @param {string} token - Password reset token
+ * @param {Date} expiryDate - Token expiry date
+ */
+const setPasswordResetToken = async (userId, token, expiryDate) => {
+  try {
+    await pool.query(
+      'UPDATE users SET password_reset_token = $1, password_reset_token_expiry = $2 WHERE user_id = $3',
+      [token, expiryDate, userId]
+    );
+  } catch (error) {
+    console.error('Error setting password reset token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clear password reset token after successful reset
+ * @param {number} userId
+ */
+const clearPasswordResetToken = async (userId) => {
+  try {
+    await pool.query(
+      'UPDATE users SET password_reset_token = NULL, password_reset_token_expiry = NULL WHERE user_id = $1',
+      [userId]
+    );
+  } catch (error) {
+    console.error('Error clearing password reset token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Set refresh token for user
+ * @param {number} userId
+ * @param {string} refreshToken - Refresh token
+ */
+const setRefreshToken = async (userId, refreshToken) => {
+  try {
+    await pool.query(
+      'UPDATE users SET refresh_token = $1 WHERE user_id = $2',
+      [refreshToken, userId]
+    );
+  } catch (error) {
+    console.error('Error setting refresh token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clear refresh token (invalidate on logout)
+ * @param {number} userId
+ */
+const clearRefreshToken = async (userId) => {
+  try {
+    await pool.query(
+      'UPDATE users SET refresh_token = NULL WHERE user_id = $1',
+      [userId]
+    );
+  } catch (error) {
+    console.error('Error clearing refresh token:', error);
+    throw error;
+  }
+};
+
+/**
+ * Check if refresh token is valid (matches stored token)
+ * @param {number} userId
+ * @param {string} refreshToken - Refresh token to check
+ * @returns {boolean} True if token matches
+ */
+const isRefreshTokenValid = async (userId, refreshToken) => {
+  try {
+    const result = await pool.query(
+      'SELECT refresh_token FROM users WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return false;
+    }
+    
+    const storedToken = result.rows[0].refresh_token;
+    return storedToken === refreshToken;
+  } catch (error) {
+    console.error('Error checking refresh token:', error);
+    return false;
+  }
+};
+
 module.exports = {
   findByEmail,
   findById,
@@ -242,8 +376,15 @@ module.exports = {
   update,
   updateLastLogin,
   findByVerificationToken,
+  findByEmailAndCode,
   setVerificationToken,
   clearVerificationToken,
   getRecentFailedLoginAttempts,
+  findByPasswordResetToken,
+  setPasswordResetToken,
+  clearPasswordResetToken,
+  setRefreshToken,
+  clearRefreshToken,
+  isRefreshTokenValid,
 };
 

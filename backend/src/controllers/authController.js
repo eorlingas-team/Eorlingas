@@ -10,11 +10,13 @@ const {
 const {
   validateRegistration,
   validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
 } = require('../utils/validationSchemas');
 const pool = require('../config/db');
 
 /**
- * Generate a secure verification token
+ * Generate a secure verification token (for database storage)
  * @returns {string} Verification token
  */
 const generateVerificationToken = () => {
@@ -22,12 +24,22 @@ const generateVerificationToken = () => {
 };
 
 /**
+ * Generate a 6-digit verification code (for email display)
+ * @returns {string} 6-digit verification code (100000-999999)
+ */
+const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+/**
  * Send verification email to user
  * TODO: Replace with actual email service
  * @param {string} to - Recipient email address
- * @param {string} token - Verification token
+ * @param {string} token - Verification token (for URL)
+ * @param {string} code - 6-digit verification code (for manual entry)
+ * @param {string} fullName - User's full name
  */
-const sendVerificationEmail = async (to, token) => {
+const sendVerificationEmail = async (to, token, code, fullName) => {
   const verificationUrl = `${'http://localhost:3000'}/verify-email?token=${token}`;
   
   console.log('='.repeat(60));
@@ -35,8 +47,35 @@ const sendVerificationEmail = async (to, token) => {
   console.log('='.repeat(60));
   console.log('To:', to);
   console.log('Subject: İTÜ Study Space Finder - Email Verification');
+  console.log('');
+  console.log('Your verification code: ' + code);
+  console.log('');
+  console.log('Or click the link below to verify automatically:');
   console.log('Verification URL:', verificationUrl);
+  console.log('');
+  console.log('Token (for backend):', token);
+  console.log('Code expires in: 24 hours');
+  console.log('='.repeat(60));
+};
+
+/**
+ * Send password reset email to user
+ * TODO: Replace with actual email service
+ * @param {string} to - Recipient email address
+ * @param {string} token - Password reset token
+ * @param {string} fullName - User's full name
+ */
+const sendPasswordResetEmail = async (to, token, fullName) => {
+  const resetUrl = `${'http://localhost:3000'}/reset-password?token=${token}`;
+  
+  console.log('='.repeat(60));
+  console.log('PASSWORD RESET EMAIL (Placeholder - Not Sent)');
+  console.log('='.repeat(60));
+  console.log('To:', to);
+  console.log('Subject: İTÜ Study Space Finder - Password Reset');
+  console.log('Reset URL:', resetUrl);
   console.log('Token:', token);
+  console.log('Expires in: 24 hours');
   console.log('='.repeat(60));
 };
 
@@ -85,12 +124,13 @@ const register = async (req, res, next) => {
     });
 
     const verificationToken = generateVerificationToken();
+    const verificationCode = generateVerificationCode();
     const tokenExpiry = new Date();
     tokenExpiry.setHours(tokenExpiry.getHours() + 24);
 
-    await userModel.setVerificationToken(user.user_id, verificationToken, tokenExpiry);
+    await userModel.setVerificationToken(user.user_id, verificationToken, verificationCode, tokenExpiry);
 
-    await sendVerificationEmail(email, verificationToken, fullName);
+    await sendVerificationEmail(email, verificationToken, verificationCode, fullName);
 
     res.status(201).json({
       success: true,
@@ -242,6 +282,8 @@ const login = async (req, res, next) => {
     const refreshToken = generateRefreshToken(tokenPayload);
     const expiresIn = getTokenExpirationTime();
 
+    await userModel.setRefreshToken(user.user_id, refreshToken);
+
     await logAuditEvent({
       userId: user.user_id,
       actionType: 'Login_Success',
@@ -276,31 +318,69 @@ const login = async (req, res, next) => {
 };
 
 /**
- * Verify email address using verification token
+ * Verify email address using verification token or code
  * POST /api/auth/verify-email
  */
 const verifyEmail = async (req, res, next) => {
   try {
-    const { token } = req.body;
+    const { token, email, code } = req.body;
 
-    if (!token) {
+    let user = null;
+
+    // Method 1: Token-based verification
+    if (token) {
+      user = await userModel.findByVerificationToken(token);
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Invalid or expired verification token',
+          },
+        });
+      }
+    }
+    // Method 2: Code-based verification
+    else if (code) {
+      if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Verification code must be a 6-digit number',
+          },
+        });
+      }
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Email is required for code-based verification',
+          },
+        });
+      }
+
+      user = await userModel.findByEmailAndCode(email, code);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Invalid verification code',
+          },
+        });
+      }
+    }
+    else {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Verification token is required',
-        },
-      });
-    }
-
-    const user = await userModel.findByVerificationToken(token);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Invalid or expired verification token',
+          message: 'Either token or code is required',
         },
       });
     }
@@ -313,7 +393,7 @@ const verifyEmail = async (req, res, next) => {
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Verification token has expired. Please request a new one.',
+          message: 'Verification token/code has expired. Please request a new one.',
         },
       });
     }
@@ -387,12 +467,13 @@ const resendVerification = async (req, res, next) => {
     }
 
     const verificationToken = generateVerificationToken();
+    const verificationCode = generateVerificationCode();
     const tokenExpiry = new Date();
     tokenExpiry.setHours(tokenExpiry.getHours() + 24);
 
-    await userModel.setVerificationToken(user.user_id, verificationToken, tokenExpiry);
+    await userModel.setVerificationToken(user.user_id, verificationToken, verificationCode, tokenExpiry);
 
-    await sendVerificationEmail(email, verificationToken, user.full_name);
+    await sendVerificationEmail(email, verificationToken, verificationCode, user.full_name);
 
     res.status(200).json({
       success: true,
@@ -442,6 +523,17 @@ const refreshToken = async (req, res, next) => {
         error: {
           code: 'UNAUTHORIZED',
           message: 'User not found or account inactive',
+        },
+      });
+    }
+
+    const isTokenValid = await userModel.isRefreshTokenValid(user.user_id, token);
+    if (!isTokenValid) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Refresh token has been invalidated. Please log in again.',
         },
       });
     }
@@ -508,6 +600,192 @@ const getMe = async (req, res, next) => {
 };
 
 /**
+ * Logout the current user
+ * POST /api/auth/logout
+ */
+const logout = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const { refreshToken } = req.body;
+
+    await userModel.clearRefreshToken(userId);
+
+    await logAuditEvent({
+      userId: userId,
+      actionType: 'Logout',
+      targetEntityType: 'User',
+      targetEntityId: userId,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: {
+        action: 'logout',
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    next(error);
+  }
+};
+
+/**
+ * Request password reset
+ * POST /api/auth/forgot-password
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const validation = validateForgotPassword(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: validation.errors,
+        },
+      });
+    }
+
+    const { email } = req.body;
+
+    const user = await userModel.findByEmail(email);
+    
+    if (user) {
+      const resetToken = generateVerificationToken();
+      const tokenExpiry = new Date();
+      tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+
+      await userModel.setPasswordResetToken(user.user_id, resetToken, tokenExpiry);
+
+      await sendPasswordResetEmail(email, resetToken, user.full_name);
+
+      await logAuditEvent({
+        userId: user.user_id,
+        actionType: 'Password_Reset',
+        targetEntityType: 'User',
+        targetEntityId: user.user_id,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        result: 'Success',
+        afterState: {
+          action: 'password_reset_requested',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'If an account with this email exists, a password reset link has been sent.',
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(200).json({
+      success: true,
+      message: 'If an account with this email exists, a password reset link has been sent.',
+    });
+  }
+};
+
+/**
+ * Reset password using reset token
+ * POST /api/auth/reset-password
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const validation = validateResetPassword(req.body);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: validation.errors,
+        },
+      });
+    }
+
+    const { token, newPassword } = req.body;
+
+    const user = await userModel.findByPasswordResetToken(token);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Invalid or expired reset token',
+        },
+      });
+    }
+
+    const now = new Date();
+    const tokenExpiry = new Date(user.password_reset_token_expiry);
+
+    if (now > tokenExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Reset token has expired. Please request a new one.',
+        },
+      });
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    await userModel.update(user.user_id, {
+      password_hash: passwordHash,
+    });
+
+    await userModel.clearPasswordResetToken(user.user_id);
+
+    await logAuditEvent({
+      userId: user.user_id,
+      actionType: 'Password_Reset',
+      targetEntityType: 'User',
+      targetEntityId: user.user_id,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: {
+        action: 'password_reset_completed',
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    try {
+      await pool.query(
+        `INSERT INTO notifications (
+          user_id, notification_type, subject, message, status
+        ) VALUES ($1, $2, $3, $4, $5)`,
+        [
+          user.user_id,
+          'Password_Reset',
+          'Password Reset Successful',
+          'Your password has been successfully reset. If you did not request this, please contact support immediately.',
+          'Pending',
+        ]
+      );
+    } catch (notificationError) {
+      console.error('Error creating password reset notification:', notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    next(error);
+  }
+};
+
+/**
  * Helper function to log audit events
  * @param {Object} logData - Audit log data
  */
@@ -542,4 +820,7 @@ module.exports = {
   resendVerification,
   refreshToken,
   getMe,
+  logout,
+  forgotPassword,
+  resetPassword,
 };
