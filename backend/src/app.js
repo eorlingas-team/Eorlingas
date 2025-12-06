@@ -3,6 +3,9 @@ const express = require("express");
 const cors = require("cors");
 const pool = require("./config/db");
 
+// Routes
+const authRoutes = require("./routes/authRoutes");
+
 const app = express();
 
 app.use(cors());
@@ -23,5 +26,8 @@ app.get("/health/db", async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+
+// API Routes
+app.use("/api/auth", authRoutes);
 
 module.exports = app;
