@@ -60,6 +60,7 @@ CREATE TYPE notification_status AS ENUM ('Pending', 'Sent', 'Failed', 'Retry_Que
 CREATE TYPE audit_action_type AS ENUM (
     'Login_Success',
     'Login_Failed',
+    'Logout',
     'Booking_Created',
     'Booking_Cancelled',
     'Space_Created',
@@ -88,8 +89,17 @@ CREATE TABLE users (
     status user_status NOT NULL DEFAULT 'Unverified',
 
     email_verified BOOLEAN DEFAULT FALSE,
+    verification_token VARCHAR(255),
+    verification_code VARCHAR(6),
+    verification_token_expiry TIMESTAMP WITH TIME ZONE,
+    password_reset_token VARCHAR(255),
+    password_reset_token_expiry TIMESTAMP WITH TIME ZONE,
+    refresh_token TEXT, -- Current active refresh token
     registration_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_login        TIMESTAMP WITH TIME ZONE,
+
+    -- Notification preferences
+    notification_preferences JSONB DEFAULT '{"emailNotifications": true, "webNotifications": true}'::jsonb,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -292,6 +302,16 @@ CREATE TABLE audit_logs (
 -- Users: login/email lookups
 CREATE INDEX idx_users_email
     ON users(email);
+
+-- Users: verification token lookups
+CREATE INDEX idx_users_verification_token
+    ON users(verification_token)
+    WHERE verification_token IS NOT NULL;
+
+-- Users: password reset token lookups
+CREATE INDEX idx_users_password_reset_token
+    ON users(password_reset_token)
+    WHERE password_reset_token IS NOT NULL;
 
 -- Study spaces can also benefit from building/status lookups (optional, but useful)
 CREATE INDEX idx_study_spaces_building_status
