@@ -14,6 +14,10 @@ const {
   validateResetPassword,
 } = require('../utils/validationSchemas');
 const pool = require('../config/db');
+const {
+  sendVerificationEmail: sendVerificationEmailService,
+  sendPasswordResetEmail: sendPasswordResetEmailService,
+} = require('../services/emailService');
 
 /**
  * Generate a secure verification token (for database storage)
@@ -33,50 +37,40 @@ const generateVerificationCode = () => {
 
 /**
  * Send verification email to user
- * TODO: Replace with actual email service
  * @param {string} to - Recipient email address
  * @param {string} token - Verification token (for URL)
  * @param {string} code - 6-digit verification code (for manual entry)
  * @param {string} fullName - User's full name
  */
 const sendVerificationEmail = async (to, token, code, fullName) => {
-  const verificationUrl = `${'http://localhost:3000'}/verify-email?token=${token}`;
-  
-  console.log('='.repeat(60));
-  console.log('EMAIL VERIFICATION (Placeholder - Not Sent)');
-  console.log('='.repeat(60));
-  console.log('To:', to);
-  console.log('Subject: İTÜ Study Space Finder - Email Verification');
-  console.log('');
-  console.log('Your verification code: ' + code);
-  console.log('');
-  console.log('Or click the link below to verify automatically:');
-  console.log('Verification URL:', verificationUrl);
-  console.log('');
-  console.log('Token (for backend):', token);
-  console.log('Code expires in: 24 hours');
-  console.log('='.repeat(60));
+  try {
+    await sendVerificationEmailService({
+      to,
+      fullName,
+      verificationToken: token,
+      verificationCode: code,
+    });
+  } catch (error) {
+    console.error('Failed to send verification email:', error);
+  }
 };
 
 /**
  * Send password reset email to user
- * TODO: Replace with actual email service
  * @param {string} to - Recipient email address
  * @param {string} token - Password reset token
  * @param {string} fullName - User's full name
  */
 const sendPasswordResetEmail = async (to, token, fullName) => {
-  const resetUrl = `${'http://localhost:3000'}/reset-password?token=${token}`;
-  
-  console.log('='.repeat(60));
-  console.log('PASSWORD RESET EMAIL (Placeholder - Not Sent)');
-  console.log('='.repeat(60));
-  console.log('To:', to);
-  console.log('Subject: İTÜ Study Space Finder - Password Reset');
-  console.log('Reset URL:', resetUrl);
-  console.log('Token:', token);
-  console.log('Expires in: 24 hours');
-  console.log('='.repeat(60));
+  try {
+    await sendPasswordResetEmailService({
+      to,
+      fullName,
+      resetToken: token,
+    });
+  } catch (error) {
+    console.error('Failed to send password reset email:', error);
+  }
 };
 
 /**
