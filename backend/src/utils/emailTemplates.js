@@ -205,6 +205,12 @@ const getPasswordResetEmailTemplate = ({ fullName, resetUrl }) => {
       <a href="${resetUrl}" class="button">Reset Password</a>
     </div>
     
+    <div class="warning-box">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Security Warning:</strong> If you did not request this password reset, you can safely ignore this email. Your account will remain secure.
+      </p>
+    </div>
+    
     <div class="info-box">
       <p style="margin: 0; font-size: 14px;">
         <strong>Note:</strong> This link is valid for 24 hours. If it expires, you will need to create a new password reset request.
