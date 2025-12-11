@@ -53,8 +53,7 @@ jobs:
           done
           echo "PostgreSQL is ready!"
 
-      - name: Setup Database Schema
-        run: PGPASSWORD=test_password psql -h localhost -U test_user -d test_db -f backend/database/schema.sql
+      
 
           
       - name: Run backend tests
