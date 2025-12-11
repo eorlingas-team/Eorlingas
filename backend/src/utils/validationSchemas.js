@@ -280,6 +280,95 @@ const validateResetPassword = (data) => {
   };
 };
 
+/**
+ * Validate booking creation request
+ * @param {Object} data - Booking data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateBookingRequest = (data) => {
+  const errors = [];
+
+  if (!data.spaceId || typeof data.spaceId !== 'number') {
+    errors.push('Valid spaceId is required');
+  }
+
+  if (!data.startTime) {
+    errors.push('startTime is required');
+  } else {
+    const startTime = new Date(data.startTime);
+    if (isNaN(startTime.getTime())) {
+      errors.push('Invalid startTime format (must be ISO 8601)');
+    } else {
+      if (startTime <= new Date()) {
+        errors.push('startTime must be in the future');
+      }
+
+      const maxDaysAhead = 14;
+      const maxDate = new Date();
+      maxDate.setDate(maxDate.getDate() + maxDaysAhead);
+      if (startTime > maxDate) {
+        errors.push(`startTime must be within ${maxDaysAhead} days`);
+      }
+    }
+  }
+
+  if (!data.endTime) {
+    errors.push('endTime is required');
+  } else {
+    const endTime = new Date(data.endTime);
+    if (isNaN(endTime.getTime())) {
+      errors.push('Invalid endTime format (must be ISO 8601)');
+    } else {
+      const startTime = new Date(data.startTime);
+      if (endTime <= startTime) {
+        errors.push('endTime must be after startTime');
+      }
+
+      const durationMinutes = (endTime - startTime) / (1000 * 60);
+      if (durationMinutes < 60) {
+        errors.push('Booking duration must be at least 60 minutes');
+      }
+      if (durationMinutes > 180) {
+        errors.push('Booking duration must be at most 180 minutes');
+      }
+    }
+  }
+
+  if (data.purpose !== undefined && data.purpose !== null) {
+    if (typeof data.purpose !== 'string') {
+      errors.push('purpose must be a string');
+    } else if (data.purpose.length > 500) {
+      errors.push('purpose must be at most 500 characters');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validate booking cancellation request
+ * @param {Object} data - Cancellation data
+ * @returns {Object} { valid: boolean, errors: Array<string> }
+ */
+const validateBookingCancellation = (data) => {
+  const errors = [];
+
+  if (data.reason !== undefined && data.reason !== null) {
+    const validReasons = ['User_Requested', 'Administrative', 'Space_Maintenance'];
+    if (!validReasons.includes(data.reason)) {
+      errors.push(`reason must be one of: ${validReasons.join(', ')}`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+};
+
 module.exports = {
   isValidEmail,
   validatePassword,
@@ -291,5 +380,7 @@ module.exports = {
   validatePasswordChange,
   validateForgotPassword,
   validateResetPassword,
+  validateBookingRequest,
+  validateBookingCancellation,
 };
 

@@ -8,6 +8,8 @@ const nodemailer = require('nodemailer');
 const {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
+  getBookingConfirmationTemplate,
+  getBookingCancellationTemplate,
 } = require('../utils/emailTemplates');
 
 /**
@@ -150,9 +152,105 @@ const sendPasswordResetEmail = async ({ to, fullName, resetToken }) => {
   }
 };
 
+/**
+ * Format date and time for email display
+ * @param {Date|string} dateTime - Date/time to format
+ * @returns {Object} { date: string, time: string }
+ */
+const formatDateTime = (dateTime) => {
+  const date = new Date(dateTime);
+  const dateStr = date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return { date: dateStr, time: timeStr };
+};
+
+/**
+ * Send booking confirmation email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @param {Object} data.booking - Booking object with space details
+ * @returns {Promise<Object>} Send result
+ */
+const sendBookingConfirmationEmail = async ({ to, fullName, booking }) => {
+  try {
+    const startDateTime = formatDateTime(booking.startTime);
+    const endDateTime = formatDateTime(booking.endTime);
+
+    const html = getBookingConfirmationTemplate({
+      fullName,
+      confirmationNumber: booking.confirmationNumber,
+      spaceName: booking.space.spaceName,
+      roomNumber: booking.space.roomNumber,
+      buildingName: booking.space.building.buildingName,
+      campusName: booking.space.building.campus.campusName,
+      startTime: startDateTime.time,
+      endTime: endDateTime.time,
+      date: startDateTime.date,
+      durationMinutes: booking.durationMinutes,
+      purpose: booking.purpose,
+    });
+
+    return await sendEmail({
+      to,
+      subject: `Booking Confirmed - ${booking.confirmationNumber} - İTÜ Study Space Finder`,
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending booking confirmation email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send booking cancellation email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @param {Object} data.booking - Booking object with space details
+ * @returns {Promise<Object>} Send result
+ */
+const sendBookingCancellationEmail = async ({ to, fullName, booking }) => {
+  try {
+    const startDateTime = formatDateTime(booking.startTime);
+    const endDateTime = formatDateTime(booking.endTime);
+
+    const html = getBookingCancellationTemplate({
+      fullName,
+      confirmationNumber: booking.confirmationNumber,
+      spaceName: booking.space.spaceName,
+      roomNumber: booking.space.roomNumber,
+      startTime: startDateTime.time,
+      endTime: endDateTime.time,
+      date: startDateTime.date,
+      cancellationReason: booking.cancellationReason || 'User_Requested',
+    });
+
+    return await sendEmail({
+      to,
+      subject: `Booking Cancelled - ${booking.confirmationNumber} - İTÜ Study Space Finder`,
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending booking cancellation email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendBookingConfirmationEmail,
+  sendBookingCancellationEmail,
 };
 

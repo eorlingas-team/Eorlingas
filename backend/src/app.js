@@ -32,4 +32,5 @@ app.get("/health/db", async (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
 app.use('/api/spaces', spaceRoutes);
+app.use('/api/bookings', require('./routes/bookingRoutes'));
 module.exports = app;
