@@ -6,7 +6,7 @@ const pool = require("./config/db");
 // Routes
 const authRoutes = require("./routes/authRoutes");
 const profileRoutes = require("./routes/profileRoutes");
-
+const spaceRoutes = require('./routes/spaceRoutes');
 const app = express();
 
 app.use(cors());
@@ -31,5 +31,5 @@ app.get("/health/db", async (req, res) => {
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
-
+app.use('/api/spaces', spaceRoutes);
 module.exports = app;
