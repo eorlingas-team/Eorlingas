@@ -53,6 +53,9 @@ jobs:
           done
           echo "PostgreSQL is ready!"
 
+      
+
+          
       - name: Run backend tests
         run: npm test
         working-directory: backend
