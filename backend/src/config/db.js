@@ -1,22 +1,22 @@
 // backend/src/config/db.js
 const { Pool } = require("pg");
-require("dotenv").config();
+const path = require("path");
+
+// .env dosyasını garanti bul
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ...(process.env.NODE_ENV === 'production' && {
-    ssl: {
-      rejectUnauthorized: false   // Render için şart
-    }
-  })
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 pool.on("connect", () => {
-  console.log("Connected to PostgreSQL database");
+  if (process.env.NODE_ENV !== 'test') {
+    console.log("✅ Veritabanına bağlandı");
+  }
 });
 
-pool.on("error", (err) => {
-  console.error("PostgreSQL connection error:", err);
-});
 
 module.exports = pool;
