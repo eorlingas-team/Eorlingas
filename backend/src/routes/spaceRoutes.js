@@ -7,6 +7,8 @@ router.get('/', spaceController.getAllSpaces);
 
 router.get('/search', spaceController.searchSpaces);
 
+router.get('/filters', spaceController.getFilterOptions);
+
 router.get('/:id', spaceController.getSpaceById);
 
 router.get('/:id/availability', spaceController.getSpaceAvailability);
