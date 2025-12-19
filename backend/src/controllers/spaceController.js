@@ -481,3 +481,32 @@ exports.deleteSpace = async (req, res) => {
     res.status(500).json({ success: false, error: { code: "DELETE_ERROR", message: err.message } });
   }
 };
+
+exports.getFilterOptions = async (req, res) => {
+  try {
+    const campusesQuery = 'SELECT campus_id, campus_name FROM campuses ORDER BY campus_name';
+    const buildingsQuery = 'SELECT building_id, building_name, campus_id FROM buildings ORDER BY building_name';
+    const roomTypesQuery = 'SELECT DISTINCT room_type FROM study_spaces WHERE status != \'Deleted\' AND room_type IS NOT NULL';
+    const noiseLevelsQuery = 'SELECT DISTINCT noise_level FROM study_spaces WHERE status != \'Deleted\' AND noise_level IS NOT NULL';
+
+    const [campusesRes, buildingsRes, roomTypesRes, noiseLevelsRes] = await Promise.all([
+      pool.query(campusesQuery),
+      pool.query(buildingsQuery),
+      pool.query(roomTypesQuery),
+      pool.query(noiseLevelsQuery)
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        campuses: campusesRes.rows,
+        buildings: buildingsRes.rows,
+        roomTypes: roomTypesRes.rows.map(r => r.room_type),
+        noiseLevels: noiseLevelsRes.rows.map(r => r.noise_level)
+      }
+    });
+  } catch (err) {
+    console.error("Filter Options Error:", err);
+    res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
+  }
+};
