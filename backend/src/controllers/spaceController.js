@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const recommendationService = require('../services/recommendationService');
 
 //  DB snake_case verisi -> API camelCase 
 const formatSpace = (row) => {
@@ -31,38 +32,92 @@ const formatSpace = (row) => {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     
-    // Mock Building Data 
     building: {
       buildingId: row.building_id,
-      buildingName: "Merkez Kütüphane",
-      campus: { campusName: "Ayazağa Kampüsü" }
-    }
+      buildingName: row.building_name,
+      campus: { 
+        campusId: row.campus_id,
+        campusName: row.campus_name 
+      }
+    },
+    
+    currentAvailability: row.status === 'Available' ? 'Available' : row.status, 
+    nextAvailableTime: null 
   };
 };
 
-// 1. LİSTELEME 
+// 1. LİSTELEME
 exports.getAllSpaces = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const offset = (page - 1) * limit;
 
+    const { campus, building, type, capacity, available, noiseLevel } = req.query;
+    const userId = req.user?.id || req.query.userId; 
 
-    const result = await pool.query(
-      "SELECT * FROM study_spaces WHERE status != 'Deleted' ORDER BY space_id ASC LIMIT $1 OFFSET $2",
-      [limit, offset]
-    );
+    let query = `
+      SELECT s.*, b.building_name, b.campus_id, c.campus_name
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      WHERE s.status != 'Deleted'
+    `;
+    
+    const params = [];
+    let paramIndex = 1;
 
-    const totalCount = await pool.query("SELECT COUNT(*) FROM study_spaces WHERE status != 'Deleted'");
+    if (campus) {
+      query += ` AND c.campus_name ILIKE $${paramIndex}`;
+      params.push(`%${campus}%`);
+      paramIndex++;
+    }
+
+    if (building) {
+      query += ` AND b.building_name ILIKE $${paramIndex}`;
+      params.push(`%${building}%`);
+      paramIndex++;
+    }
+
+    if (type) {
+      query += ` AND s.room_type = $${paramIndex}`;
+      params.push(type);
+      paramIndex++;
+    }
+
+    if (capacity) {
+      query += ` AND s.capacity >= $${paramIndex}`;
+      params.push(capacity);
+      paramIndex++;
+    }
+
+    if (noiseLevel) {
+      query += ` AND s.noise_level = $${paramIndex}`;
+      params.push(noiseLevel);
+      paramIndex++;
+    }
+
+    if (available === 'true') {
+      query += ` AND s.status = 'Available'`;
+    }
+
+    const result = await pool.query(query, params);
+    let spaces = result.rows;
+
+    spaces = await recommendationService.scoreAndSortSpaces(spaces, userId || null);
+
+    const totalCount = spaces.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedSpaces = spaces.slice(startIndex, endIndex);
 
     res.status(200).json({
       success: true,
       data: {
-        spaces: result.rows.map(formatSpace),
+        spaces: paginatedSpaces.map(formatSpace),
         pagination: {
           page, limit,
-          total: parseInt(totalCount.rows[0].count),
-          totalPages: Math.ceil(parseInt(totalCount.rows[0].count) / limit)
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit)
         }
       }
     });
@@ -72,20 +127,217 @@ exports.getAllSpaces = async (req, res) => {
   }
 };
 
+exports.searchSpaces = async (req, res) => {
+  try {
+    const { q, page = 1, limit = 20 } = req.query;
+    const userId = req.user?.id || req.query.userId; 
+
+    if (!q) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Search query 'q' is required" } });
+    }
+
+    const keyword = `%${q}%`;
+    
+    const query = `
+      SELECT s.*, b.building_name, b.campus_id, c.campus_name
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      WHERE s.status != 'Deleted'
+      AND (
+        s.space_name ILIKE $1 OR
+        s.description ILIKE $1 OR
+        b.building_name ILIKE $1 OR
+        c.campus_name ILIKE $1
+      )
+    `;
+
+    const result = await pool.query(query, [keyword]);
+    let spaces = result.rows;
+
+    spaces = await recommendationService.scoreAndSortSpaces(spaces, userId || null);
+
+    const totalCount = spaces.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedSpaces = spaces.slice(startIndex, endIndex);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        spaces: paginatedSpaces.map(formatSpace),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
+  }
+};
+
+const getDatesInRange = (startDate, endDate) => {
+  const dates = [];
+  let currentDate = new Date(startDate);
+  const end = new Date(endDate);
+
+  while (currentDate <= end) {
+    dates.push(new Date(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  return dates;
+};
+
+const generateDailySlots = (dateObj, space, bookings) => {
+  const dateStr = dateObj.toISOString().split('T')[0];
+  const dayOfWeek = dateObj.getDay(); // 0: Pazar, 6: Cumartesi
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+  let startStr, endStr;
+
+  if (isWeekend) {
+    startStr = space.operating_hours_weekend_start;
+    endStr = space.operating_hours_weekend_end;
+  } else {
+    startStr = space.operating_hours_weekday_start;
+    endStr = space.operating_hours_weekday_end;
+  }
+
+  if (!startStr || !endStr) return { date: dateStr, slots: [] };
+
+  const slots = [];
+  let currentHour = parseInt(startStr.split(':')[0]);
+  const endHour = parseInt(endStr.split(':')[0]);
+
+  while (currentHour < endHour) {
+    const slotStart = `${currentHour.toString().padStart(2, '0')}:00`;
+    const slotEnd = `${(currentHour + 1).toString().padStart(2, '0')}:00`;
+    
+    const isBooked = bookings.some(b => {
+      const bStart = new Date(b.start_time);
+      const bEnd = new Date(b.end_time);
+      
+      if (bStart.toISOString().split('T')[0] !== dateStr) return false;
+
+      const bStartHour = bStart.getUTCHours() + 3; // TR saati (UTC+3) fix - TODO: Timezone yönetimi
+      const bEndHour = bEnd.getUTCHours() + 3;
+
+      return (bStartHour < currentHour + 1) && (bEndHour > currentHour);
+    });
+
+    slots.push({
+      start: slotStart,
+      end: slotEnd,
+      available: !isBooked
+    });
+
+    currentHour++;
+  }
+
+  return { date: dateStr, slots };
+};
+
+
 // 2. DETAY GETİRME 
 exports.getSpaceById = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
+    const query = `
+      SELECT s.*, b.building_name, b.campus_id, c.campus_name
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      WHERE s.space_id = $1
+    `;
+    const result = await pool.query(query, [id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
     }
 
-    res.status(200).json({ success: true, data: formatSpace(result.rows[0]) });
+    const spaceData = formatSpace(result.rows[0]);
+
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const bookingsQuery = `
+      SELECT start_time, end_time 
+      FROM bookings 
+      WHERE space_id = $1 
+      AND status = 'Confirmed'
+      AND start_time >= CURRENT_DATE
+      AND end_time < CURRENT_DATE + INTERVAL '2 days'
+    `;
+    const bookingsResult = await pool.query(bookingsQuery, [id]);
+
+    const availabilityData = [
+      generateDailySlots(today, result.rows[0], bookingsResult.rows),
+      generateDailySlots(tomorrow, result.rows[0], bookingsResult.rows)
+    ];
+
+    const currentStatus = result.rows[0].status === 'Available' ? 'Available' : 'Unavailable';
+    
+    res.status(200).json({ 
+      success: true, 
+      data: {
+        space: spaceData,
+        availability: {
+          currentStatus,
+          nextAvailableTime: null,
+          availableTimeSlots: availabilityData
+        }
+      } 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
+  }
+};
+
+exports.getSpaceAvailability = async (req, res) => {
+  const { id } = req.params;
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "startDate and endDate are required" } });
+  }
+
+  try {
+    const spaceCheck = await pool.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
+    if (spaceCheck.rows.length === 0) {
+       return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
+    }
+    const space = spaceCheck.rows[0];
+
+    const bookingsQuery = `
+      SELECT start_time, end_time 
+      FROM bookings 
+      WHERE space_id = $1 
+      AND status = 'Confirmed'
+      AND (start_time < $3 AND end_time > $2)
+    `;
+    const bookingsResult = await pool.query(bookingsQuery, [id, startDate, endDate]);
+
+    const dates = getDatesInRange(startDate, endDate);
+    const availability = dates.map(date => generateDailySlots(date, space, bookingsResult.rows));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        spaceId: parseInt(id),
+        dateRange: { start: startDate, end: endDate },
+        availability: availability
+      }
+    });
+  } catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
   }
 };
 
