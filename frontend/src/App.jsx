@@ -7,14 +7,12 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 
-// Student Pages
 import SpaceDetailsPage from './pages/SpaceDetailsPage';
 import BookSpacePage from './pages/BookSpacePage';
 import MyBookingsPage from './pages/MyBookingsPage';
 import BookingDetailsPage from './pages/BookingDetailsPage';
 import ProfilePage from './pages/ProfilePage';
 
-// Admin & Manager Pages
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagementPage from './pages/UserManagementPage';
 import AuditLogsPage from './pages/AuditLogsPage';
