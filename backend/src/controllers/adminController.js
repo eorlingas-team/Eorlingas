@@ -1,7 +1,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
 
-// İstatistikleri Getir (Dashboard için)
+// İstatistikleri Getir 
 exports.getSystemStats = async (req, res) => {
   try {
     
@@ -11,18 +11,18 @@ exports.getSystemStats = async (req, res) => {
       db.query('SELECT COUNT(*) as total FROM bookings')
     ]);
 
-    // Detaylı istatistikler (Aktif kullanıcılar, onaylı rezervasyonlar vb.)
+    // Detaylı istatistikler 
     
     const stats = {
       totalUsers: parseInt(userCounts.rows[0].total),
       totalSpaces: parseInt(spaceCounts.rows[0].total),
       totalBookings: parseInt(bookingCounts.rows[0].total),
-      // Şimdilik dummy (sabit) veriler, ileride detaylı sorgu yazılabilir
+    
       activeUsers: parseInt(userCounts.rows[0].total), 
       availableSpaces: parseInt(spaceCounts.rows[0].total),
       recentActivity: {
-        newUsersLast7Days: 0, // İleride eklenecek
-        newBookingsLast7Days: 0 // İleride eklenecek
+        newUsersLast7Days: 0, 
+        newBookingsLast7Days: 0 
       }
     };
 
@@ -99,7 +99,7 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-//  Kullanıcı Üzerinde Yönetici İşlemi (Banlama, Rol Değiştirme)
+//  Kullanıcı Üzerinde Yönetici İşlemi 
 exports.updateUser = async (req, res) => {
   const userId = req.params.id;
   const { action, params } = req.body; 
@@ -116,7 +116,7 @@ exports.updateUser = async (req, res) => {
         break;
 
       case 'suspend':
-        // Kullanıcıyı suspend et (İleride aktif rezervasyonlarını iptal eden kod buraya eklenecek)
+       
         queryText = 'UPDATE users SET status = $1 WHERE user_id = $2 RETURNING *';
         queryParams = ['Suspended', userId];
         break;
@@ -163,4 +163,234 @@ exports.updateUser = async (req, res) => {
       error: { code: 'INTERNAL_ERROR', message: 'İşlem başarısız oldu.' }
     });
   }
+};
+
+// --- ADMIN SPACE YÖNETİMİ ---
+
+// Tüm Mekanları Getir 
+exports.getAllSpacesAdmin = async (req, res) => {
+  try {
+    const { campus, building, status, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    let queryText = `
+      SELECT s.*, b.building_name, c.campus_name 
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Filtreler
+    if (campus) {
+      queryText += ` AND c.campus_name ILIKE $${paramIndex}`;
+      queryParams.push(`%${campus}%`);
+      paramIndex++;
+    }
+    if (building) {
+      queryText += ` AND b.building_name ILIKE $${paramIndex}`;
+      queryParams.push(`%${building}%`);
+      paramIndex++;
+    }
+    if (status) {
+      queryText += ` AND s.status = $${paramIndex}`;
+      queryParams.push(status);
+      paramIndex++;
+    }
+
+    // Sıralama ve Sayfalama
+    queryText += ` ORDER BY s.space_id DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryParams.push(limit, offset);
+
+    const result = await db.query(queryText, queryParams);
+    const countResult = await db.query('SELECT COUNT(*) FROM study_spaces');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        spaces: result.rows,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: parseInt(countResult.rows[0].count)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Admin Get Spaces Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Mekanlar alınamadı.' } });
+  }
+};
+
+//  Yeni Mekan Oluştur 
+exports.createSpace = async (req, res) => {
+  const client = await db.connect(); 
+  try {
+    await client.query('BEGIN'); 
+
+    const { 
+      buildingId, spaceName, roomNumber, floor, capacity, 
+      roomType, noiseLevel, description, amenities, 
+      operatingHours, accessibilityFeatures 
+    } = req.body;
+
+    // Oda numarası çakışma kontrolü 
+    const checkQuery = 'SELECT * FROM study_spaces WHERE building_id = $1 AND room_number = $2';
+    const checkResult = await client.query(checkQuery, [buildingId, roomNumber]);
+
+    if (checkResult.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ 
+        success: false, 
+        error: { code: 'DUPLICATE_ENTRY', message: 'Bu binada bu oda numarası zaten var.' } 
+      });
+    }
+
+    const insertQuery = `
+      INSERT INTO study_spaces (
+        building_id, space_name, room_number, floor, capacity, 
+        room_type, noise_level, description, amenities, 
+        operating_hours, accessibility_features, status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Available')
+      RETURNING *
+    `;
+
+    const values = [
+      buildingId, spaceName, roomNumber, floor, capacity, 
+      roomType, noiseLevel, description, amenities, 
+      operatingHours, accessibilityFeatures
+    ];
+
+    const result = await client.query(insertQuery, values);
+    
+   
+
+    await client.query('COMMIT'); 
+
+    res.status(201).json({
+      success: true,
+      message: 'Mekan başarıyla oluşturuldu.',
+      data: { space: result.rows[0] }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK'); 
+    console.error('Create Space Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Mekan oluşturulamadı.' } });
+  } finally {
+    client.release();
+  }
+};
+
+//  Mekan Güncelle
+exports.updateSpace = async (req, res) => {
+  const spaceId = req.params.id;
+  const updates = req.body;
+
+  try {
+ 
+ 
+    const fields = Object.keys(updates);
+    const values = Object.values(updates);
+    
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, message: 'Güncellenecek veri yok.' });
+    }
+
+   
+    const setClause = fields.map((field, index) => {
+     
+      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      return `${dbField} = $${index + 1}`;
+    }).join(', ');
+
+    const queryText = `UPDATE study_spaces SET ${setClause}, updated_at = NOW() WHERE space_id = $${fields.length + 1} RETURNING *`;
+    
+    const result = await db.query(queryText, [...values, spaceId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Mekan bulunamadı.' } });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Mekan güncellendi.',
+      data: { space: result.rows[0] }
+    });
+
+  } catch (error) {
+    console.error('Update Space Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Güncelleme başarısız.' } });
+  }
+};
+
+// Mekan Statüsü Değiştir 
+exports.updateSpaceStatus = async (req, res) => {
+  const spaceId = req.params.id;
+  const { status, maintenanceStartDate, maintenanceEndDate } = req.body; 
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Mekanı güncelle
+    const updateQuery = `
+      UPDATE study_spaces 
+      SET status = $1, maintenance_start_date = $2, maintenance_end_date = $3, updated_at = NOW()
+      WHERE space_id = $4
+      RETURNING *
+    `;
+    const result = await client.query(updateQuery, [status, maintenanceStartDate, maintenanceEndDate, spaceId]);
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Mekan bulunamadı.' } });
+    }
+
+    let cancelledCount = 0;
+
+    
+    if (status === 'Maintenance' || status === 'Deleted') {
+      const cancelQuery = `
+        UPDATE bookings 
+        SET status = 'Cancelled', cancellation_reason = 'Space_Maintenance'
+        WHERE space_id = $1 AND status = 'Confirmed' AND start_time >= NOW()
+      `;
+  
+      
+      const cancelResult = await client.query(cancelQuery, [spaceId]);
+      cancelledCount = cancelResult.rowCount;
+    }
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: 'Mekan durumu güncellendi.',
+      data: { 
+        space: result.rows[0],
+        cancelledBookingsCount: cancelledCount
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Status Update Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Durum güncellenemedi.' } });
+  } finally {
+    client.release();
+  }
+};
+
+//  Mekan Sil 
+exports.deleteSpaceAdmin = async (req, res) => {
+
+  req.body.status = 'Deleted';
+  req.body.maintenanceStartDate = null;
+  req.body.maintenanceEndDate = null;
+  return exports.updateSpaceStatus(req, res);
 };
