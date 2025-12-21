@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-
+// DB verisini API formatına çevir
 const formatSpace = (row) => {
   return {
     spaceId: row.space_id,
@@ -25,12 +25,11 @@ const formatSpace = (row) => {
         end: row.operating_hours_weekend_end?.slice(0, 5)
       }
     },
-    
     images: [], 
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     
-   
+    // AYAZAĞA ÖZEL YAPILANDIRMA:
     building: {
       buildingId: row.building_id,
       buildingName: row.building_name, 
@@ -42,7 +41,7 @@ const formatSpace = (row) => {
   };
 };
 
-// 1. LİSTELEME VE FİLTRELEME (Ayazağa)
+// 1. LİSTELEME VE FİLTRELEME (Ayazağa İçi)
 exports.getAllSpaces = async (req, res) => {
   try {
     const { 
@@ -57,7 +56,6 @@ exports.getAllSpaces = async (req, res) => {
 
     const offset = (page - 1) * limit;
 
-
     let queryText = `
       SELECT s.*, b.building_name 
       FROM study_spaces s
@@ -68,43 +66,35 @@ exports.getAllSpaces = async (req, res) => {
     const queryParams = [];
     let paramIndex = 1;
 
-
-    
     if (buildingId) {
       queryText += ` AND s.building_id = $${paramIndex}`;
       queryParams.push(buildingId);
       paramIndex++;
     }
-
     if (noiseLevel) {
       queryText += ` AND s.noise_level = $${paramIndex}`;
       queryParams.push(noiseLevel);
       paramIndex++;
     }
-
     if (roomType) {
       queryText += ` AND s.room_type = $${paramIndex}`;
       queryParams.push(roomType);
       paramIndex++;
     }
-
     if (minCapacity) {
       queryText += ` AND s.capacity >= $${paramIndex}`;
       queryParams.push(minCapacity);
       paramIndex++;
     }
-
     if (search) {
       queryText += ` AND (s.space_name ILIKE $${paramIndex} OR s.room_number ILIKE $${paramIndex})`;
       queryParams.push(`%${search}%`);
       paramIndex++;
     }
 
-    // Toplam Sayı Sorgusu
     const countQueryText = queryText.replace('SELECT s.*, b.building_name', 'SELECT COUNT(*)');
     const countResult = await pool.query(countQueryText, queryParams);
 
-    // Sıralama ve Sayfalama
     queryText += ` ORDER BY s.space_id ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     queryParams.push(limit, offset);
 
@@ -122,7 +112,6 @@ exports.getAllSpaces = async (req, res) => {
         }
       }
     });
-
   } catch (err) {
     console.error('Get All Spaces Error:', err);
     res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: "Mekanlar listelenemedi." } });
@@ -144,7 +133,6 @@ exports.getSpaceById = async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
     }
-
     res.status(200).json({ success: true, data: formatSpace(result.rows[0]) });
   } catch (err) {
     console.error(err);
