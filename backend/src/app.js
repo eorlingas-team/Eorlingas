@@ -7,10 +7,12 @@ const pool = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const profileRoutes = require("./routes/profileRoutes");
 const spaceRoutes = require('./routes/spaceRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
 
 // Basit health check
 app.get("/", (req, res) => {
@@ -32,5 +34,6 @@ app.get("/health/db", async (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
 app.use('/api/spaces', spaceRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 module.exports = app;
