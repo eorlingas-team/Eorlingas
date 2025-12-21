@@ -394,3 +394,136 @@ exports.deleteSpaceAdmin = async (req, res) => {
   req.body.maintenanceEndDate = null;
   return exports.updateSpaceStatus(req, res);
 };
+
+// --- AUDIT LOGS (DENETİM KAYITLARI) ---
+
+// Denetim Kayıtlarını Getir 
+exports.getAuditLogs = async (req, res) => {
+  try {
+    const { dateFrom, dateTo, actionType, userId, targetEntityType, result, page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
+
+    let queryText = `
+      SELECT a.*, u.email, u.full_name, u.role 
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.user_id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Filtreler
+    if (dateFrom) {
+      queryText += ` AND a.timestamp >= $${paramIndex}`;
+      queryParams.push(dateFrom);
+      paramIndex++;
+    }
+    if (dateTo) {
+      queryText += ` AND a.timestamp <= $${paramIndex}`;
+      queryParams.push(dateTo);
+      paramIndex++;
+    }
+    if (actionType) {
+      queryText += ` AND a.action_type = $${paramIndex}`;
+      queryParams.push(actionType);
+      paramIndex++;
+    }
+    if (userId) {
+      queryText += ` AND a.user_id = $${paramIndex}`;
+      queryParams.push(userId);
+      paramIndex++;
+    }
+    if (targetEntityType) {
+      queryText += ` AND a.target_entity_type = $${paramIndex}`;
+      queryParams.push(targetEntityType);
+      paramIndex++;
+    }
+    if (result) {
+      queryText += ` AND a.result = $${paramIndex}`;
+      queryParams.push(result);
+      paramIndex++;
+    }
+
+    // Sıralama ve Sayfalama
+    queryText += ` ORDER BY a.timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryParams.push(limit, offset);
+
+    const resultData = await db.query(queryText, queryParams);
+    
+    // Toplam kayıt sayısı 
+   
+    const countResult = await db.query('SELECT COUNT(*) FROM audit_logs');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        logs: resultData.rows,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: parseInt(countResult.rows[0].count)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get Audit Logs Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Kayıtlar alınamadı.' } });
+  }
+};
+
+//  Audit Logları Dışa Aktar 
+exports.exportAuditLogs = async (req, res) => {
+  try {
+    const { format = 'json', filters = {} } = req.body; 
+    const { dateFrom, dateTo, actionType, userId } = filters;
+
+    let queryText = `
+      SELECT a.log_id, a.action_type, a.user_id, u.email, a.target_entity_type, 
+             a.target_entity_id, a.result, a.timestamp, a.ip_address 
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.user_id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+    let paramIndex = 1;
+
+    
+    if (dateFrom) { queryText += ` AND a.timestamp >= $${paramIndex}`; queryParams.push(dateFrom); paramIndex++; }
+    if (dateTo) { queryText += ` AND a.timestamp <= $${paramIndex}`; queryParams.push(dateTo); paramIndex++; }
+    if (actionType) { queryText += ` AND a.action_type = $${paramIndex}`; queryParams.push(actionType); paramIndex++; }
+    if (userId) { queryText += ` AND a.user_id = $${paramIndex}`; queryParams.push(userId); paramIndex++; }
+
+    queryText += ` ORDER BY a.timestamp DESC LIMIT 1000`; // Güvenlik için max 1000 
+
+    const dbResult = await db.query(queryText, queryParams);
+    const logs = dbResult.rows;
+
+    if (format.toLowerCase() === 'csv') {
+     
+      const fields = ['log_id', 'action_type', 'email', 'target_entity_type', 'result', 'timestamp', 'ip_address'];
+      const header = fields.join(',');
+      const rows = logs.map(row => {
+        return fields.map(field => {
+          const val = row[field] ? String(row[field]).replace(/,/g, ';') : ''; 
+          return val;
+        }).join(',');
+      });
+      
+      const csvContent = [header, ...rows].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.csv"');
+      return res.status(200).send(csvContent);
+    } else {
+     
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.json"');
+      return res.status(200).json(logs);
+    }
+
+  } catch (error) {
+    console.error('Export Error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Export başarısız.' } });
+  }
+};

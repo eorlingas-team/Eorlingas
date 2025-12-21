@@ -4,17 +4,17 @@ const pool = require('../config/db');
 const userModel = require('../models/userModel');
 const { verifyAccessToken } = require('../utils/jwtUtils');
 
-// --- MOCK KURULUMU ---
+
 
 const mockClient = {
   query: jest.fn(),
   release: jest.fn(),
 };
 
-// DB Pool Mock
+
 jest.mock('../config/db', () => ({
-  query: jest.fn(),                // Eski controllerlar için (Stats, Users)
-  connect: jest.fn(() => mockClient), // Yeni controllerlar için (Space - Transaction)
+  query: jest.fn(),                
+  connect: jest.fn(() => mockClient), 
 }));
 
 jest.mock('../models/userModel', () => ({ findById: jest.fn() }));
@@ -26,9 +26,7 @@ describe('Administrative API Tests (Comprehensive)', () => {
     jest.clearAllMocks();
   });
 
-  // ======================================================
-  // BÖLÜM 1: ESKİ TESTLER (STATS & USERS)
-  // ======================================================
+
 
   it('should return system stats for Administrator', async () => {
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
@@ -83,22 +81,20 @@ describe('Administrative API Tests (Comprehensive)', () => {
     expect(res.body.data.user.status).toBe('Suspended');
   });
 
-  // ======================================================
-  // BÖLÜM 2: YENİ TESTLER (SPACE MANAGEMENT) - DÜZELTİLDİ ✅
-  // ======================================================
+
 
   it('should create a space (Admin)', async () => {
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
 
-    // SIRAYLA MOCKLAMA (Transaction Sırasına Göre):
-    // 1. BEGIN
+    
+    //  BEGIN
     mockClient.query.mockResolvedValueOnce({}); 
-    // 2. SELECT (Oda no kontrolü - Boş dönerse çakışma yok demektir)
+    // SELECT 
     mockClient.query.mockResolvedValueOnce({ rows: [] }); 
-    // 3. INSERT (Mekanı oluştur)
+    //  INSERT 
     mockClient.query.mockResolvedValueOnce({ rows: [{ space_id: 1, space_name: 'New Room' }] });
-    // 4. COMMIT
+    //  COMMIT
     mockClient.query.mockResolvedValueOnce({});
 
     const res = await request(app)
@@ -110,7 +106,7 @@ describe('Administrative API Tests (Comprehensive)', () => {
         roomNumber: '101'
       });
 
-    // Hata ayıklama için (Eğer yine fail olursa log basar)
+   
     if (res.statusCode !== 201) {
       console.log('Create Space Error Body:', res.body);
     }
@@ -123,12 +119,12 @@ describe('Administrative API Tests (Comprehensive)', () => {
     verifyAccessToken.mockReturnValue({ userId: 2, role: 'Space_Manager' });
     userModel.findById.mockResolvedValue({ user_id: 2, role: 'Space_Manager', status: 'Verified' });
 
-    // Transaction Sırası:
+   
     // 1. BEGIN
     mockClient.query.mockResolvedValueOnce({});
     // 2. UPDATE Space Status
     mockClient.query.mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Maintenance' }] });
-    // 3. UPDATE Bookings (Cancel) - Bakıma alınca rezervasyon iptali
+    // 3. UPDATE Bookings 
     mockClient.query.mockResolvedValueOnce({ rowCount: 5 }); 
     // 4. COMMIT
     mockClient.query.mockResolvedValueOnce({});
@@ -153,14 +149,14 @@ describe('Administrative API Tests (Comprehensive)', () => {
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
 
-    // Transaction Sırası:
-    // 1. BEGIN
+    
+    // BEGIN
     mockClient.query.mockResolvedValueOnce({});
-    // 2. UPDATE Space (Status=Deleted)
+    //  UPDATE Space 
     mockClient.query.mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Deleted' }] }); 
-    // 3. UPDATE Bookings (Cancel)
+    //  UPDATE Bookings 
     mockClient.query.mockResolvedValueOnce({ rowCount: 0 }); 
-    // 4. COMMIT
+    // COMMIT
     mockClient.query.mockResolvedValueOnce({});
 
     const res = await request(app).delete('/api/admin/spaces/1').set('Authorization', 'Bearer token').send({});
@@ -170,5 +166,52 @@ describe('Administrative API Tests (Comprehensive)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.data.space.status).toBe('Deleted');
   });
+
+
+
+  it('should list audit logs (Admin)', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    
+    const mockLogs = [{ log_id: 1, action_type: 'Login_Success', result: 'Success' }];
+    
+
+    pool.query
+      .mockResolvedValueOnce({ rows: mockLogs }) 
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] }); 
+
+    const res = await request(app)
+      .get('/api/admin/audit-logs')
+      .set('Authorization', 'Bearer token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.logs.length).toBe(1);
+    expect(res.body.data.logs[0].action_type).toBe('Login_Success');
+  });
+
+  it('should export audit logs as CSV', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    const mockLogs = [
+      { log_id: 1, action_type: 'Space_Created', email: 'admin@itu.edu.tr', result: 'Success' }
+    ];
+
+    pool.query.mockResolvedValueOnce({ rows: mockLogs }); // Export sorgusu
+
+    const res = await request(app)
+      .post('/api/admin/audit-logs/export')
+      .set('Authorization', 'Bearer token')
+      .send({ format: 'csv', filters: {} });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+  
+    expect(res.text).toContain('log_id,action_type,email');
+    expect(res.text).toContain('Space_Created');
+  });
+
+
 
 });
