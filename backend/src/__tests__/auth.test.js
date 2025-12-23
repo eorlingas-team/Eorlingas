@@ -17,6 +17,7 @@ const jwtUtils = require('../utils/jwtUtils');
 const validationSchemas = require('../utils/validationSchemas');
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
+const { getIstanbulNow } = require('../utils/dateHelpers');
 
 // Mock dependencies
 jest.mock('../models/userModel');
@@ -668,7 +669,7 @@ describe('Auth Controller', () => {
         email: 'test@itu.edu.tr',
         email_verified: false,
         status: 'Unverified',
-        verification_token_expiry: new Date(Date.now() + 3600000),
+        verification_token_expiry: new Date(getIstanbulNow().getTime() + 3600000),
       };
 
       userModel.findByVerificationToken.mockResolvedValue(mockUser);
@@ -715,7 +716,7 @@ describe('Auth Controller', () => {
 
       const mockUser = {
         user_id: 1,
-        verification_token_expiry: new Date(Date.now() - 3600000), // 1 hour ago
+        verification_token_expiry: new Date(getIstanbulNow().getTime() - 3600000), // 1 hour ago
       };
 
       userModel.findByVerificationToken.mockResolvedValue(mockUser);
@@ -741,7 +742,7 @@ describe('Auth Controller', () => {
         email: 'test@itu.edu.tr',
         email_verified: false,
         status: 'Unverified',
-        verification_token_expiry: new Date(Date.now() + 3600000),
+        verification_token_expiry: new Date(getIstanbulNow().getTime() + 3600000),
       };
 
       userModel.findByEmailAndCode.mockResolvedValue(mockUser);
@@ -839,7 +840,7 @@ describe('Auth Controller', () => {
 
       const mockUser = {
         user_id: 1,
-        verification_token_expiry: new Date(Date.now() - 3600000), // 1 hour ago
+        verification_token_expiry: new Date(getIstanbulNow().getTime() - 3600000), // 1 hour ago
       };
 
       userModel.findByEmailAndCode.mockResolvedValue(mockUser);
@@ -1138,7 +1139,7 @@ describe('Auth Controller', () => {
       const mockUser = {
         user_id: 1,
         email: 'test@itu.edu.tr',
-        password_reset_token_expiry: new Date(Date.now() + 3600000),
+        password_reset_token_expiry: new Date(getIstanbulNow().getTime() + 3600000),
       };
 
       userModel.findByPasswordResetToken.mockResolvedValue(mockUser);
@@ -1194,7 +1195,7 @@ describe('Auth Controller', () => {
 
       const mockUser = {
         user_id: 1,
-        password_reset_token_expiry: new Date(Date.now() - 3600000), // 1 hour ago
+        password_reset_token_expiry: new Date(getIstanbulNow().getTime() - 3600000), // 1 hour ago
       };
 
       userModel.findByPasswordResetToken.mockResolvedValue(mockUser);
