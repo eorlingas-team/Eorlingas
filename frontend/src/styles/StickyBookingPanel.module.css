@@ -1,0 +1,255 @@
+/* StickyBookingPanel.module.css */
+
+.panel-wrapper {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-main);
+  padding: 16px 20px;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.panel-wrapper.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Selection Info */
+.selection-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.time-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.time-badge .material-symbols-outlined {
+  font-size: 1.125rem;
+  color: var(--primary-color);
+}
+
+.time-separator {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.duration-badge {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--primary-color);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* Purpose Input */
+.purpose-input-wrapper {
+  flex: 1;
+  max-width: 300px;
+}
+
+.purpose-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-main);
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.purpose-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.purpose-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Attendee Count */
+.attendee-count-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendee-count-wrapper .material-symbols-outlined {
+  font-size: 1.25rem;
+  color: var(--primary-color);
+}
+
+.attendee-input {
+  width: 80px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-main);
+  font-size: 0.875rem;
+  font-family: inherit;
+  font-weight: 600;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.attendee-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-cancel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+}
+
+.btn-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-confirm:hover {
+  background: var(--primary-hover);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-confirm .material-symbols-outlined,
+.btn-cancel .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* Loading State */
+.btn-confirm.loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn-confirm.loading::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Mobile Layout */
+@media (max-width: 768px) {
+  .panel-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .selection-info {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .purpose-input-wrapper {
+    width: 100%;
+    max-width: none;
+  }
+
+  .action-buttons {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .btn-cancel,
+  .btn-confirm {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* Empty State (no selection) */
+.empty-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.empty-panel .material-symbols-outlined {
+  font-size: 1.25rem;
+}

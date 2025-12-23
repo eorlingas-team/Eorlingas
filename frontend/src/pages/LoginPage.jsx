@@ -1,109 +1,117 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/apiService';
-import './LoginPage.css';
+import { useAuth } from '../contexts/AuthContext';
+import styles from '../styles/LoginPage.module.css';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    
-    try {
-      const response = await authService.login({ email, password });
-      const { token, user } = response.data.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
+    setLoading(true);
 
-      if (user.role === 'Administrator' || user.role === 'Space_Manager') {
+    try {
+      const user = await login(email, password);
+      if (user.role === 'Administrator') {
         navigate('/admin');
+      } else if (user.role === 'Space_Manager') {
+        navigate('/space-manager');
       } else {
-        navigate('/profile');
+        navigate('/');
       }
     } catch (err) {
       console.error("Login Error:", err);
-      setError(err.response?.data?.error?.message || 'Invalid email or password');
+      setError(err.message || 'Invalid email or password');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="login-container dark">
+    <div className={`${styles['login-container']} ${styles['dark']}`}>
       {/* Return to Home Button */}
-      <button className="btn-return-home" onClick={() => navigate('/')}>
-        <span className="material-symbols-outlined">arrow_back</span>
+      <button className={`${styles['btn-return-home']}`} onClick={() => navigate('/')}>
+        <span className={`material-symbols-outlined`}>arrow_back</span>
         <span>Return to Home</span>
       </button>
 
-      <div className="login-wrapper">
-        <div className="login-header">
-          <h1 className="login-title">Login to your account</h1>
+      <div className={`${styles['login-wrapper']}`}>
+        <div className={`${styles['login-header']}`}>
+          <h1 className={`${styles['login-title']}`}>Login to your account</h1>
         </div>
 
-        <main className="login-card">
-          {error && <div className="error-message">{error}</div>}
+        <main className={`${styles['login-card']}`}>
+          {error && <div className={`${styles['error-message']}`}>{error}</div>}
 
-          <form onSubmit={handleLogin} className="login-form">
-            <div className="form-group">
-              <label className="input-wrapper">
-                <p className="form-label">İTÜ Email</p>
-                <input 
-                  type="email" 
-                  className="form-input" 
-                  placeholder="user@itu.edu.tr" 
+          <form onSubmit={handleLogin} className={`${styles['login-form']}`}>
+            <div className={`${styles['form-group']}`}>
+              <label className={`${styles['input-wrapper']}`}>
+                <p className={`${styles['form-label']}`}>İTÜ Email</p>
+                <input
+                  type="email"
+                  className={`${styles['form-input']}`}
+                  placeholder="user@itu.edu.tr"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required 
+                  required
                 />
               </label>
-              <p className="helper-text">Only @itu.edu.tr accounts are permitted.</p>
+              <p className={`${styles['helper-text']}`}>Only @itu.edu.tr accounts are permitted.</p>
             </div>
 
-            <div className="form-group">
-              <div className="form-label">
+            <div className={`${styles['form-group']}`}>
+              <div className={`${styles['form-label']}`}>
                 <span>Password</span>
-                <a className="forgot-link" href="#">Forgot Password?</a>
               </div>
-              <div className="password-wrapper">
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  className="form-input" 
-                  placeholder="Enter your password" 
+              <div className={`${styles['password-wrapper']}`}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className={`${styles['form-input']}`}
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required 
+                  required
                 />
-                <span 
-                  className="material-symbols-outlined password-toggle-icon"
+                <span
+                  className={`material-symbols-outlined ${styles['password-toggle-icon']}`}
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? 'visibility_off' : 'visibility'}
                 </span>
               </div>
+              <div style={{ textAlign: 'right', marginTop: '4px' }}>
+                <span className={`${styles['forgot-link']}`} onClick={() => navigate('/forgot-password')}>Forgot Password?</span>
+              </div>
             </div>
 
-            <button type="submit" className="login-btn">Login</button>
+            <button type="submit" className={`${styles['login-btn']}`} disabled={loading}>
+              {loading ? <LoadingSpinner size="sm" color="white" /> : 'Login'}
+            </button>
           </form>
         </main>
 
-        <footer className="login-footer">
+        <footer className={`${styles['login-footer']}`}>
           <p>
             Don't have an account?
-            <span className="signup-link" onClick={() => navigate('/register')}>Sign Up</span>
+            <span className={`${styles['signup-link']}`} onClick={() => navigate('/register')}>Sign Up</span>
           </p>
-          
-          <div className="divider-container">
-            <div className="divider-line" aria-hidden="true"></div>
-            <div className="divider-text-wrapper">
-              <span className="divider-text">Or</span>
+
+          <div className={`${styles['divider-container']}`}>
+            <div className={`${styles['divider-line']}`} aria-hidden="true"></div>
+            <div className={`${styles['divider-text-wrapper']}`}>
+              <span className={`${styles['divider-text']}`}>Or</span>
             </div>
           </div>
 
-          <span className="guest-link" onClick={() => navigate('/')}>Continue as Guest</span>
+          <span className={`${styles['guest-link']}`} onClick={() => navigate('/')}>Continue as Guest</span>
         </footer>
       </div>
     </div>

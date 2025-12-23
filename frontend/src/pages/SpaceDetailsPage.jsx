@@ -1,244 +1,440 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { spaceService } from '../services/apiService';
-import './SpaceDetailsPage.css';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { spacesApi } from '../api/spaces';
+import { bookingsApi } from '../api/bookings';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { getTodayIstanbul, getDateRangeIstanbul, createIstanbulDateTime, getIstanbulNow } from '../utils/dateUtils';
+import { addDays, format } from 'date-fns';
+import styles from '../styles/SpaceDetailsPage.module.css';
+import Header from '../components/Header';
+import TimeSlotGrid from '../components/TimeSlotGrid';
+import StickyBookingPanel from '../components/StickyBookingPanel';
+import LoadingSpinner from '../components/LoadingSpinner';
+import LocationMap from '../components/Map/LocationMap';
 
 const SpaceDetailsPage = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  
+  const location = useLocation();
+  const { addToast } = useToast();
+  const authState = useAuth();
+
+  const isAuthenticated = authState?.isAuthenticated;
+
   const [space, setSpace] = useState(null);
+  const [availability, setAvailability] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(true);
+  const [date, setDate] = useState(getTodayIstanbul());
+  const [selection, setSelection] = useState(null);
+  const [isBooking, setIsBooking] = useState(false);
+  const [minDate, setMinDate] = useState(getTodayIstanbul());
 
-  // Check auth status
+  // Fetch space and availability data
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    setIsLoggedIn(!!token);
-  }, []);
+    const fetchData = async () => {
+      try {
+        const cachedSpace = location.state?.spaceData;
 
-  // Fetch Logic
+        if (cachedSpace && cachedSpace.spaceId === parseInt(id)) {
+          setSpace(cachedSpace);
+          setLoading(false);
+          setAvailabilityLoading(true);
+
+          const { startDate, endDate } = getDateRangeIstanbul(14);
+          const availabilityResponse = await spacesApi.getAvailability(id, {
+            startDate,
+            endDate
+          });
+
+          if (availabilityResponse.data.success) {
+            setAvailability(availabilityResponse.data.data.availability);
+          }
+          setAvailabilityLoading(false);
+        } else {
+          setLoading(true);
+          setAvailabilityLoading(true);
+          const { startDate, endDate } = getDateRangeIstanbul(14);
+          const [spaceRes, availRes] = await Promise.all([
+            spacesApi.getById(id),
+            spacesApi.getAvailability(id, {
+              startDate,
+              endDate
+            })
+          ]);
+
+          if (spaceRes.data.success) {
+            setSpace(spaceRes.data.data.space);
+          }
+          if (availRes.data.success) {
+            setAvailability(availRes.data.data.availability);
+          }
+          setLoading(false);
+          setAvailabilityLoading(false);
+        }
+      } catch (err) {
+        console.error("Error fetching space details:", err);
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchData();
+    }
+  }, [id, location.state]);
+
   useEffect(() => {
-    // Mock Data
-    setSpace({
-      spaceName: "Mustafa İnan Library - Group Study Room 2",
-      location: "Room 204, Mustafa İnan Library, Ayazağa Campus",
-      capacity: 25,
-      roomType: "Group Study",
-      noiseLevel: "Collaborative",
-      floor: "2nd Floor",
-      description: "A spacious and bright group study area designed for collaboration. Features large tables, comfortable seating, and ample natural light, making it an ideal spot for project work and team discussions.",
-      amenities: [
-        { name: "High-Speed Wi-Fi", icon: "wifi", positive: true },
-        { name: "Power Outlets", icon: "power", positive: true },
-        { name: "Whiteboard", icon: "edit", positive: true },
-        { name: "Projector", icon: "videocam", positive: true },
-        { name: "No Printer Access", icon: "print_disabled", positive: false },
-        { name: "Public Computers", icon: "desktop_windows", positive: true }
-      ],
-      schedule: [
-        { time: "09:00 - 10:00", status: "Booked" },
-        { time: "10:00 - 11:00", status: "Booked" },
-        { time: "11:00 - 12:00", status: "Available" },
-        { time: "12:00 - 13:00", status: "Available" },
-        { time: "13:00 - 14:00", status: "Booked" },
-        { time: "14:00 - 15:00", status: "Available" }
-      ]
+    setSelection(null);
+  }, [date]);
+
+  const bookedSlots = useMemo(() => {
+    if (!availability) return [];
+
+    const dateData = availability.find(d => d.date === date);
+    if (!dateData || !dateData.slots) return [];
+
+    const booked = [];
+    let currentBooking = null;
+
+    dateData.slots.forEach((slot, index) => {
+      if (!slot.available) {
+        if (!currentBooking) {
+          currentBooking = { start: slot.start, end: slot.end };
+        } else {
+          currentBooking.end = slot.end;
+        }
+      } else {
+        if (currentBooking) {
+          booked.push(currentBooking);
+          currentBooking = null;
+        }
+      }
     });
-    setLoading(false);
-  }, [id]);
 
-  if (loading) return <div>Loading...</div>;
-  if (!space) return <div>Space not found</div>;
+    if (currentBooking) {
+      booked.push(currentBooking);
+    }
+
+    return booked;
+  }, [availability, date]);
+
+  const operatingHours = useMemo(() => {
+    if (!space?.operatingHours) {
+      return { weekday: { start: '08:00', end: '22:00' } };
+    }
+    return space.operatingHours;
+  }, [space]);
+
+  const isClosed = useMemo(() => {
+    if (!availability) return false;
+    const dateData = availability.find(d => d.date === date);
+    return dateData?.closed === true || (dateData?.slots?.length === 0);
+  }, [availability, date]);
+
+  useEffect(() => {
+    const checkTimeCutoff = () => {
+      const now = getIstanbulNow();
+      const todayStr = getTodayIstanbul();
+      const dayOfWeek = now.getDay(); // 0 = Sun, 6 = Sat
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      const hours = isWeekend ? operatingHours?.weekend : operatingHours?.weekday;
+
+      let shouldSkipToday = false;
+
+      if (!hours || !hours.end) {
+        shouldSkipToday = true;
+      } else {
+        const [endHour, endMinute] = hours.end.split(':').map(Number);
+        const closingTime = new Date(now);
+        closingTime.setHours(endHour, endMinute, 0, 0);
+
+        const diffMs = closingTime - now;
+        const oneHourMs = 60 * 60 * 1000;
+
+        if (diffMs < oneHourMs) {
+          shouldSkipToday = true;
+        }
+      }
+
+      if (shouldSkipToday) {
+        const tomorrowStr = format(addDays(now, 1), 'yyyy-MM-dd');
+
+        setMinDate(tomorrowStr);
+
+        setDate((prevDate) => {
+          return prevDate === todayStr ? tomorrowStr : prevDate;
+        });
+      } else {
+        setMinDate(todayStr);
+      }
+    };
+
+    checkTimeCutoff();
+  }, [operatingHours]);
+
+  const mapAmenityToIcon = (amenity) => {
+    const lower = amenity.toLowerCase();
+    if (lower.includes('wifi') || lower.includes('internet')) return 'wifi';
+    if (lower.includes('power') || lower.includes('outlet')) return 'power';
+    if (lower.includes('whiteboard') || lower.includes('board')) return 'edit';
+    if (lower.includes('projector')) return 'videocam';
+    if (lower.includes('tv') || lower.includes('monitor') || lower.includes('screen')) return 'tv';
+    if (lower.includes('computer') || lower.includes('pc')) return 'desktop_windows';
+    if (lower.includes('printer') || lower.includes('print')) return 'print';
+    if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('kitchen')) return 'coffee';
+    if (lower.includes('water')) return 'water_drop';
+    if (lower.includes('accessible') || lower.includes('wheelchair')) return 'accessible';
+    if (lower.includes('air') || lower.includes('ac')) return 'ac_unit';
+    if (lower.includes('quiet') || lower.includes('silence')) return 'volume_off';
+    if (lower.includes('sound') || lower.includes('audio')) return 'volume_up';
+    return 'check_circle';
+  };
+
+  const handleSelectionChange = (newSelection) => {
+    setSelection(newSelection);
+  };
+
+  const handleConfirmBooking = async (purpose, attendeeCount) => {
+    if (!selection || !isAuthenticated) return;
+
+    setIsBooking(true);
+    try {
+      const startTime = createIstanbulDateTime(date, selection.start);
+      const endTime = createIstanbulDateTime(date, selection.end);
+
+      const response = await bookingsApi.create({
+        spaceId: parseInt(id),
+        startTime,
+        endTime,
+        purpose: purpose || null,
+        attendeeCount: attendeeCount || 1
+      });
+
+      if (response.data.success) {
+        addToast(`Booking confirmed! Confirmation number: ${response.data.data.confirmationNumber}`, "success");
+        navigate('/bookings', { state: { forceRefresh: true } });
+      }
+    } catch (err) {
+      console.error("Booking error:", err);
+      addToast("Booking failed: " + (err.response?.data?.error?.message || err.message), "error");
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
+  const handleCancelSelection = () => {
+    setSelection(null);
+  };
+
+  if (loading) {
+    return (
+      <div className={`${styles['details-page-container']} ${styles.dark}`}>
+        <div className={`${styles['details-page-container']} ${styles.dark}`}>
+          <Header />
+          <LoadingSpinner fullHeight text="Loading space details..." />
+        </div>
+      </div>
+    );
+  }
+
+  if (!space) {
+    return (
+      <div className={`${styles['details-page-container']} ${styles.dark}`}>
+        <Header />
+        <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Space not found
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="details-page-container dark">
-      {/* Header */}
-      <header className="details-header">
-        <div className="brand-title" onClick={() => navigate('/')}>İTÜ Study Space Finder</div>
-        
-        <div className="header-nav">
-          <div className="nav-links-desktop">
-            <button className="nav-link" onClick={() => navigate('/')}>Find a Space</button>
-            <button className="nav-link" onClick={() => navigate('/profile')}>My Bookings</button>
-            
-            {!isLoggedIn ? (
-              <button className="auth-btn-header" onClick={() => navigate('/login')}>Log In</button>
-            ) : (
-              <div className="auth-btn-header" style={{backgroundColor: '#374151', cursor:'default'}}>Logged In</div>
-            )}
-          </div>
+    <div className={`${styles['details-page-container']} ${styles.dark}`}>
+      <Header />
 
-          <button 
-            className="hamburger-btn" 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          >
-            <span className="material-symbols-outlined" style={{fontSize: '28px'}}>menu</span>
+      <main className={styles['details-main']}>
+        <div className={styles['content-wrapper']}>
+
+
+          <button onClick={() => navigate('/')} className={styles['back-btn']} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem' }}>
+            <span className="material-symbols-outlined">arrow_back</span>
+            Back to all spaces
           </button>
-        </div>
-      </header>
 
-      {/* Mobile Menu */}
-      <div className={`mobile-menu ${isMobileMenuOpen ? 'open' : ''}`}>
-        <button onClick={() => navigate('/')} className="nav-link" style={{textAlign:'left'}}>Find a Space</button>
-        <button className="nav-link" onClick={() => navigate('/profile')} style={{textAlign:'left'}}>My Bookings</button>
-        {!isLoggedIn && (
-          <button onClick={() => navigate('/login')} className="nav-link" style={{textAlign:'left', color: 'var(--primary-color)'}}>Log In</button>
-        )}
-      </div>
+          <div className={styles['details-grid']}>
 
-      {/* Main Content */}
-      <main className="details-main">
-        <div className="content-wrapper">
-          
-          <div className="details-grid">
-            
-            {/* Left Column: Details */}
-            <div className="space-info-col">
-              
+            {/* Left Column: Space Details */}
+            <div className={styles['space-info-col']}>
+
+
               {/* Title Section */}
-              <div className="title-section">
-                <h1 className="space-title">{space.spaceName}</h1>
-                <p className="space-location">{space.location}</p>
+              <div className={styles['title-section']}>
+                <h1 className={styles['space-title']}>{space.spaceName}</h1>
+                <p className={styles['space-location']}>
+                  {space.building?.buildingName}, {space.building?.campus?.campusName}
+                </p>
               </div>
 
               {/* Stats Grid */}
-              <div className="stats-grid">
-                <div className="stat-item">
-                  <span className="material-symbols-outlined stat-icon">groups</span>
-                  <div className="stat-text">
-                    <span className="stat-label">Capacity</span>
-                    <span className="stat-value">{space.capacity} People</span>
+              <div className={styles['stats-grid']}>
+                <div className={styles['stat-item']}>
+                  <span className={`material-symbols-outlined ${styles['stat-icon']}`}>groups</span>
+                  <div className={styles['stat-text']}>
+                    <span className={styles['stat-label']}>Capacity</span>
+                    <span className={styles['stat-value']}>{space.capacity} People</span>
                   </div>
                 </div>
-                <div className="stat-item">
-                  <span className="material-symbols-outlined stat-icon">meeting_room</span>
-                  <div className="stat-text">
-                    <span className="stat-label">Room Type</span>
-                    <span className="stat-value">{space.roomType}</span>
+                <div className={styles['stat-item']}>
+                  <span className={`material-symbols-outlined ${styles['stat-icon']}`}>meeting_room</span>
+                  <div className={styles['stat-text']}>
+                    <span className={styles['stat-label']}>Type</span>
+                    <span className={styles['stat-value']}>{space.roomType?.replace(/_/g, ' ')}</span>
                   </div>
                 </div>
-                <div className="stat-item">
-                  <span className="material-symbols-outlined stat-icon">graphic_eq</span>
-                  <div className="stat-text">
-                    <span className="stat-label">Noise Level</span>
-                    <span className="stat-value">{space.noiseLevel}</span>
+                <div className={styles['stat-item']}>
+                  <span className={`material-symbols-outlined ${styles['stat-icon']}`}>graphic_eq</span>
+                  <div className={styles['stat-text']}>
+                    <span className={styles['stat-label']}>Noise Level</span>
+                    <span className={styles['stat-value']}>{space.noiseLevel}</span>
                   </div>
                 </div>
-                <div className="stat-item">
-                  <span className="material-symbols-outlined stat-icon">location_on</span>
-                  <div className="stat-text">
-                    <span className="stat-label">Floor</span>
-                    <span className="stat-value">{space.floor}</span>
+                <div className={styles['stat-item']}>
+                  <span className={`material-symbols-outlined ${styles['stat-icon']}`}>location_on</span>
+                  <div className={styles['stat-text']}>
+                    <span className={styles['stat-label']}>Floor</span>
+                    <span className={styles['stat-value']}>{space.floor}</span>
                   </div>
                 </div>
               </div>
 
               {/* Description */}
-              <div className="info-block">
+              <div className={styles['info-block']}>
                 <h3>Description</h3>
-                <p className="description-text">{space.description}</p>
+                <p className={styles['description-text']}>{space.description || 'No description available.'}</p>
               </div>
 
               {/* Amenities */}
-              <div className="info-block">
-                <h3>Amenities</h3>
-                <div className="amenities-grid">
-                  {space.amenities.map((item, index) => (
-                    <div key={index} className="amenity-item">
-                      <span className={`material-symbols-outlined amenity-icon ${!item.positive ? 'negative' : ''}`}>
-                        {item.icon}
-                      </span>
-                      {item.name}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Accessibility */}
-              <div className="info-block">
-                <h3>Accessibility</h3>
-                <div className="amenities-grid">
-                  <div className="amenity-item">
-                    <span className="material-symbols-outlined amenity-icon">accessible</span>
-                    Wheelchair Accessible
-                  </div>
-                  <div className="amenity-item">
-                    <span className="material-symbols-outlined amenity-icon">wc</span>
-                    Accessible Restrooms
-                  </div>
-                </div>
-              </div>
-
-              {/* Operating Hours */}
-              <div className="info-block">
-                <h3>Operating Hours</h3>
-                <div className="hours-list">
-                  <div className="hours-row">
-                    <span>Monday - Friday</span>
-                    <span style={{fontWeight: 500}}>08:00 - 22:00</span>
-                  </div>
-                  <div className="hours-row">
-                    <span>Saturday - Sunday</span>
-                    <span style={{fontWeight: 500}}>10:00 - 20:00</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Right Column: Availability Sidebar */}
-            <div className="sidebar-col">
-              <div className="availability-card">
-                <h3 className="card-title">Availability</h3>
-                
-                <div className="input-group">
-                  <label className="stat-label" style={{marginBottom:'8px', display:'block'}}>Select a Date</label>
-                  <div className="date-input-wrapper">
-                    <input 
-                      type="date" 
-                      className="date-input" 
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                    />
-                    <span className="material-symbols-outlined calendar-icon">calendar_today</span>
-                  </div>
-                </div>
-
-                <div>
-                  <p style={{fontWeight: 500, marginBottom: '12px'}}>Today's Schedule</p>
-                  <div className="schedule-list">
-                    {space.schedule.map((slot, index) => (
-                      <div key={index} className="schedule-item">
-                        <span className="time-text">{slot.time}</span>
-                        <span className={`status-text ${slot.status.toLowerCase()}`}>
-                          {slot.status}
+              {space.amenities && space.amenities.length > 0 && (
+                <div className={styles['info-block']}>
+                  <h3>Amenities</h3>
+                  <div className={styles['amenities-grid']}>
+                    {space.amenities.map((item, index) => (
+                      <div key={index} className={styles['amenity-item']}>
+                        <span className={`material-symbols-outlined ${styles['amenity-icon']}`}>
+                          {mapAmenityToIcon(item)}
                         </span>
+                        {item}
                       </div>
                     ))}
                   </div>
                 </div>
+              )}
 
-                {/* Conditional Login Box */}
-                {!isLoggedIn ? (
-                  <div className="login-prompt-box">
-                    <span className="material-symbols-outlined lock-icon">lock</span>
-                    <p className="prompt-text">You must be logged in to book a space</p>
+              {/* Operating Hours */}
+              <div className={styles['info-block']}>
+                <h3>Operating Hours</h3>
+                <div className={styles['hours-list']}>
+                  <div className={styles['hours-row']}>
+                    <span>Monday - Friday</span>
+                    <span style={{ fontWeight: 500 }}>
+                      {operatingHours.weekday?.start || '08:00'} - {operatingHours.weekday?.end || '22:00'}
+                    </span>
                   </div>
-                ) : (
-                  <button className="auth-btn-header" style={{width: '100%'}}>
-                    Book Selected Slot
-                  </button>
-                )}
-
+                  <div className={styles['hours-row']}>
+                    <span>Saturday - Sunday</span>
+                    <span style={{ fontWeight: 500 }}>
+                      {operatingHours.weekend?.start && operatingHours.weekend?.end
+                        ? `${operatingHours.weekend.start} - ${operatingHours.weekend.end}`
+                        : 'Closed'}
+                    </span>
+                  </div>
+                </div>
               </div>
+
+              {/* Map */}
+              <div style={{ width: '50%' }}>
+                <LocationMap
+                  latitude={space.building?.latitude}
+                  longitude={space.building?.longitude}
+                  buildingName={space.building?.buildingName}
+                  campusName={space.building?.campus?.campusName}
+                  roomNumber={space.roomNumber}
+                  floor={space.floor}
+                />
+              </div>
+
+
+
+            </div>
+
+            {/* Right Column: Booking Calendar */}
+            <div className={styles['sidebar-col']}>
+
+              {/* Date Picker */}
+              <div className={styles['date-picker-card']}>
+                <div className={styles['input-group']}>
+                  <label className={styles['stat-label']} style={{ marginBottom: '8px', display: 'block' }}>
+                    Select Date
+                  </label>
+                  <div className={styles['date-input-wrapper']}>
+                    <input
+                      type="date"
+                      className={styles['date-input']}
+                      value={date}
+                      min={minDate}
+                      max={getDateRangeIstanbul(14).endDate}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                    <span className={`material-symbols-outlined ${styles['calendar-icon']}`}>calendar_today</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Time Slot Grid */}
+              {availabilityLoading ? (
+                <LoadingSpinner text="Loading availability..." />
+              ) : isClosed ? (
+                <div className={styles['login-prompt-box']}>
+                  <span className={`material-symbols-outlined ${styles['lock-icon']}`}>event_busy</span>
+                  <p className={styles['prompt-text']}>This space is closed on the selected date</p>
+                </div>
+              ) : (
+                <>
+                  <TimeSlotGrid
+                    operatingHours={operatingHours}
+                    bookedSlots={bookedSlots}
+                    selectedDate={date}
+                    onSelectionChange={handleSelectionChange}
+                    externalSelection={selection}
+                    readOnly={!isAuthenticated}
+                  />
+                  {!isAuthenticated && (
+                    <div className={styles['guest-info-box']}>
+                      <span className="material-symbols-outlined">info</span>
+                      <p>You need to <button onClick={() => navigate('/login')} className={styles['inline-login-btn']}>log in</button> to make a reservation.</p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
           </div>
         </div>
       </main>
+
+      {/* Sticky Booking Panel */}
+      {isAuthenticated && (
+        <StickyBookingPanel
+          selection={selection}
+          spaceName={space.spaceName}
+          maxCapacity={space.capacity}
+          onConfirm={handleConfirmBooking}
+          onCancel={handleCancelSelection}
+          isLoading={isBooking}
+        />
+      )}
     </div>
   );
 };

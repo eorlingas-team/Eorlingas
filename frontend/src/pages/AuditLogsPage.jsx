@@ -1,167 +1,257 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './AuditLogsPage.css';
+import React, { useEffect, useState } from 'react';
+import { useAdmin } from '../contexts/AdminContext';
+import DataTable from '../components/DataTable';
+import Header from '../components/Header';
+import { formatDateTime } from '../utils/dateUtils';
+import { useToast } from '../contexts/ToastContext';
+import styles from '../styles/AuditLogsPage.module.css';
 
 const AuditLogsPage = () => {
-  const navigate = useNavigate();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const {
+    auditLogs,
+    auditLogsLoading,
+    auditLogsFilters,
+    auditLogsPagination,
+    actions
+  } = useAdmin();
 
-  // Mock Data
-  const logs = [
-    { id: 1, time: "2025-10-27 14:30:15", user: "admin@itu.edu.tr", action: "BOOKING_CREATED", target: "Space: G-101", result: "Success" },
-    { id: 2, time: "2025-10-27 13:45:02", user: "staff@itu.edu.tr", action: "USER_UPDATED", target: "User: 12345", result: "Success" },
-    { id: 3, time: "2025-10-27 12:01:55", user: "student@itu.edu.tr", action: "LOGIN_ATTEMPT", target: "N/A", result: "Failure" },
-    { id: 4, time: "2025-10-27 11:55:23", user: "admin@itu.edu.tr", action: "SPACE_DELETED", target: "Space: M-203", result: "Success" },
-    { id: 5, time: "2025-10-26 09:12:10", user: "system", action: "BACKUP_COMPLETED", target: "Database", result: "Success" },
+  const { addToast } = useToast();
+  const [localSearch, setLocalSearch] = useState('');
+
+  const cleanDeletedEmail = (email) => {
+    if (!email) return email;
+    const match = email.match(/^(.*)_deleted_\d+(@.+)$/);
+    if (match) {
+      return match[1] + match[2];
+    }
+    return email.split('_deleted_')[0];
+  };
+
+  useEffect(() => {
+    actions.fetchAuditLogs(false, true, { page: 1 });
+  }, [auditLogsFilters]);
+
+  const handlePageChange = (newPage) => {
+    actions.fetchAuditLogs(false, true, { page: newPage });
+  };
+
+  const handleRowsPerPageChange = (newLimit) => {
+    actions.fetchAuditLogs(false, true, { page: 1, limit: newLimit });
+  };
+
+  const handleExport = async () => {
+    try {
+      const result = await actions.exportAuditLogs('csv');
+
+      if (result.success) {
+        const blob = new Blob([result.data], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `audit-logs-${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        addToast("Audit logs exported successfully.", "success");
+      } else {
+        addToast('Export failed: ' + result.error, "error");
+      }
+    } catch (err) {
+      console.error("Export error:", err);
+      addToast("Export failed", "error");
+    }
+  };
+
+  const columns = [
+    {
+      key: 'timestamp',
+      label: 'Timestamp',
+      width: '15%',
+      render: (log) => <span style={{ whiteSpace: 'nowrap' }}>{formatDateTime(log.timestamp)}</span>
+    },
+    {
+      key: 'user',
+      label: 'User',
+      width: '20%',
+      color: 'var(--text-muted)',
+      sortAccessor: (log) => log.user ? cleanDeletedEmail(log.user.email) : 'System',
+      render: (log) => <span style={{ color: 'var(--text-muted)' }}>{log.user ? cleanDeletedEmail(log.user.email) : 'System'}</span>
+    },
+    {
+      key: 'action',
+      label: 'Action',
+      width: '20%',
+      sortAccessor: (log) => log.actionType?.replace(/_/g, ' ') || 'N/A',
+      render: (log) => log.actionType?.replace(/_/g, ' ') || 'N/A'
+    },
+    {
+      key: 'target',
+      label: 'Target',
+      width: '20%',
+      color: 'var(--text-muted)',
+      sortAccessor: (log) => {
+        if (log.targetUser) return cleanDeletedEmail(log.targetUser.email);
+        if (log.actionType === 'Login_Failed' && log.beforeState?.attemptedEmail) {
+          return `${cleanDeletedEmail(log.beforeState.attemptedEmail)} (Attempt)`;
+        }
+        if (!log.targetEntityType) return 'N/A';
+        const targetId = log.targetEntityId ? ` #${log.targetEntityId}` : '';
+        return `${log.targetEntityType}${targetId}`;
+      },
+      render: (log) => {
+        if (log.targetUser) return <span style={{ color: 'var(--text-muted)' }}>{cleanDeletedEmail(log.targetUser.email)}</span>;
+
+        if (log.actionType === 'Login_Failed' && log.beforeState?.attemptedEmail) {
+          return <span style={{ color: 'var(--text-muted)' }}>{cleanDeletedEmail(log.beforeState.attemptedEmail)} (Attempt)</span>;
+        }
+
+        if (!log.targetEntityType) return 'N/A';
+
+        const targetId = log.targetEntityId ? ` #${log.targetEntityId}` : '';
+        return <span style={{ color: 'var(--text-muted)' }}>{`${log.targetEntityType}${targetId}`}</span>;
+      }
+    },
+    {
+      key: 'result',
+      label: 'Result',
+      width: '15%',
+      render: (log) => (
+        <div className={`${styles['status-badge']} ${log.result === 'Failed' ? styles.failed : styles.success}`}>
+          <div className={`${styles['status-dot']} ${log.result === 'Failed' ? styles['status-failure'] : styles['status-success']}`}></div>
+          {log.result || 'Success'}
+        </div>
+      )
+    }
   ];
 
+  const actionTypeOptions = [
+    'User_Registered',
+    'Login_Success',
+    'Login_Failed',
+    'Booking_Created',
+    'Booking_Cancelled',
+    'Space_Created',
+    'Space_Updated',
+    'Space_Deleted',
+    'Status_Changed',
+    'Role_Changed',
+    'Account_Suspended',
+    'Password_Reset'
+  ];
+
+  const targetEntityOptions = [
+    'User',
+    'Space',
+    'Booking',
+    'System'
+  ];
+
+  const filters = [
+    {
+      title: 'Action Type',
+      type: 'select',
+      filterKey: 'actionType',
+      options: [
+        { value: 'All', label: 'All' },
+        ...actionTypeOptions.map(type => ({ value: type, label: type.replace(/_/g, ' ') }))
+      ]
+    },
+    {
+      title: 'Target Entity',
+      type: 'select',
+      filterKey: 'targetEntity',
+      options: [
+        { value: 'All', label: 'All' },
+        ...targetEntityOptions.map(entity => ({ value: entity, label: entity }))
+      ]
+    },
+    {
+      title: 'Result',
+      type: 'select',
+      filterKey: 'result',
+      options: [
+        { value: 'All', label: 'All' },
+        { value: 'Success', label: 'Success' },
+        { value: 'Failed', label: 'Failed' }
+      ]
+    },
+    {
+      title: 'Start Date',
+      type: 'date',
+      filterKey: 'startDate'
+    },
+    {
+      title: 'End Date',
+      type: 'date',
+      filterKey: 'endDate'
+    }
+  ];
+
+  const handleClearFilters = () => {
+    setLocalSearch('');
+    actions.updateAuditLogsFilters({
+      actionType: 'All',
+      targetEntity: 'All',
+      result: 'All',
+      startDate: null,
+      endDate: null,
+      search: ''
+    });
+  };
+
   return (
-    <div className="audit-container dark">
-      {/* Header */}
-      <header className="audit-header">
-        <div className="brand-title" onClick={() => navigate('/')}>İTÜ Study Space Finder</div>
-        
-        <div className="header-nav">
-          <div className="nav-links-desktop">
-
-            <button className="nav-link" onClick={() => navigate('/admin')}>Dashboard</button>
-            <button className="nav-link" onClick={() => navigate('/admin/users')}>User Management</button>
-        </div>
-
-        <div className="user-avatar-small" onClick={() => navigate('/profile')}>
-            <span className="material-symbols-outlined">person</span>
-          </div>  
-
-          <button 
-            className="hamburger-btn" 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          >
-            <span className="material-symbols-outlined" style={{fontSize: '28px'}}>menu</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Mobile Menu */}
-      <div className={`mobile-menu ${isMobileMenuOpen ? 'open' : ''}`}>
-        <button onClick={() => navigate('/admin')} className="nav-link" style={{textAlign:'left'}}>Dashboard</button>
-        <button className="nav-link" style={{textAlign:'left'}}>Spaces</button>
-        <button className="nav-link" style={{textAlign:'left'}}>Bookings</button>
-        <button className="nav-link" style={{textAlign:'left'}}>Users</button>
-        <button className="nav-link active" style={{textAlign:'left'}}>Audit Logs</button>
-      </div>
+    <div className={`${styles['audit-container']}`}>
+      <Header />
 
       {/* Main Content */}
-      <main className="audit-main">
-        <div className="content-wrapper">
-          
+      <main className={`${styles['audit-main']}`}>
+        <div className={`${styles['content-wrapper']}`}>
+
           {/* Page Heading */}
-          <div className="page-heading">
+          <div className={`${styles['page-heading']}`}>
             <div>
-              <h1 className="page-title">Audit Logs</h1>
-              <p className="page-subtitle">Monitor all system activities and user actions.</p>
+              <h1 className={`${styles['page-title']}`}>Audit Logs</h1>
+              <p className={`${styles['page-subtitle']}`}>Monitor all system activities and user actions.</p>
             </div>
-            <button className="export-btn">
-              <span className="material-symbols-outlined">download</span>
+            <button className={`${styles['export-btn']}`} onClick={handleExport}>
+              <span className={`material-symbols-outlined`}>download</span>
               Export to CSV
             </button>
           </div>
 
-          {/* Filter Panel */}
-          <div className="filter-panel">
-            <div className="filter-row">
-              <div className="search-wrapper">
-                <span className="material-symbols-outlined search-icon">search</span>
-                <input 
-                  type="text" 
-                  className="search-input" 
-                  placeholder="Search by user email or ID..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              
-              <button className="filter-dropdown">
-                Action Type: All
-                <span className="material-symbols-outlined">arrow_drop_down</span>
-              </button>
-              
-              <button className="filter-dropdown">
-                Target Entity: All
-                <span className="material-symbols-outlined">arrow_drop_down</span>
-              </button>
-              
-              <button className="filter-dropdown">
-                Date Range
-                <span className="material-symbols-outlined">arrow_drop_down</span>
-              </button>
-              
-              <button className="clear-btn">Clear Filters</button>
-            </div>
-          </div>
-
-          {/* Logs Table */}
-          <div className="table-container">
-            <div className="table-scroll-wrapper">
-              <table className="logs-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Target</th>
-                    <th>Result</th>
-                    <th style={{textAlign: 'right'}}>Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id}>
-                      <td style={{whiteSpace: 'nowrap'}}>{log.time}</td>
-                      <td style={{color: '#9ca3af'}}>{log.user}</td>
-                      <td>{log.action}</td>
-                      <td style={{color: '#9ca3af'}}>{log.target}</td>
-                      <td>
-                        <div className="status-badge">
-                          {/* Circle logic based on Success/Failure */}
-                          <div className={`status-dot ${log.result === 'Success' ? 'status-success' : 'status-failure'}`}></div>
-                          {log.result}
-                        </div>
-                      </td>
-                      <td style={{textAlign: 'right'}}>
-                        <button className="view-btn">
-                          <span className="material-symbols-outlined" style={{fontSize: '18px'}}>visibility</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Pagination */}
-          <div className="pagination-bar">
-            <span className="page-info">
-              Showing <span style={{fontWeight: 700, color: 'var(--text-light)'}}>1-5</span> of <span style={{fontWeight: 700, color: 'var(--text-light)'}}>100</span>
-            </span>
-            
-            <div className="pagination-controls">
-              <button className="page-nav-btn" disabled>
-                <span className="material-symbols-outlined">chevron_left</span>
-              </button>
-              
-              <button className="page-nav-btn active">1</button>
-              <button className="page-nav-btn">2</button>
-              <button className="page-nav-btn">3</button>
-              <span style={{color: '#6b7280', padding: '0 4px'}}>...</span>
-              <button className="page-nav-btn">100</button>
-              
-              <button className="page-nav-btn">
-                <span className="material-symbols-outlined">chevron_right</span>
-              </button>
-            </div>
-          </div>
+          {/* DataTable Component */}
+          <DataTable
+            columns={columns}
+            data={auditLogs}
+            loading={auditLogsLoading}
+            // searchTerm={localSearch} // Search disabled for server-side for now
+            // onSearchChange={setLocalSearch} 
+            // searchPlaceholder="Search audit logs..."
+            filters={filters}
+            onClearFilters={handleClearFilters}
+            onFilterChange={(newFilters) => {
+              actions.updateAuditLogsFilters({
+                ...auditLogsFilters,
+                ...newFilters
+              });
+            }}
+            activeFilters={auditLogsFilters}
+            emptyMessage="No audit logs found"
+            containerClass={styles['logs-table']}
+            clientSide={false}
+            pagination={{
+              total: auditLogsPagination.total,
+              totalPages: auditLogsPagination.totalPages,
+              current: auditLogsPagination.currentPage,
+              showing: {
+                start: (auditLogsPagination.currentPage - 1) * auditLogsPagination.limit + 1,
+                end: Math.min(auditLogsPagination.currentPage * auditLogsPagination.limit, auditLogsPagination.total)
+              },
+              onPageChange: handlePageChange,
+              onRowsPerPageChange: handleRowsPerPageChange
+            }}
+          />
 
         </div>
       </main>

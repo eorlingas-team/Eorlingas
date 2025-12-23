@@ -1,303 +1,402 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { spaceService } from '../services/apiService';
-import './LandingPage.css';
+import { useSpaces } from '../contexts/SpacesContext';
+import styles from '../styles/LandingPage.module.css';
+import Header from '../components/Header';
+import Slider from 'rc-slider';
+import 'rc-slider/assets/index.css';
+import LoadingSpinner from '../components/LoadingSpinner';
+import BuildingsMap from '../components/Map/BuildingsMap';
 
 const LandingPage = () => {
   const navigate = useNavigate();
 
-  // Data State
-  const [spaces, setSpaces] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    spaces,
+    allSpaces,
+    loading,
+    paginationInfo,
+    currentPage,
+    filters,
+    searchTerm,
+    meta,
+    actions
+  } = useSpaces();
 
-  // Filter State
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({
-    campus: '',
-    building: '',
-    roomType: '',
-    noiseLevel: '',
-    capacity: 1,
-    availableNow: false
-  });
+  const handleApplyFilters = () => {
+    actions.refresh();
+  };
 
-  // Mock Fetch (Replace with actual API call)
-  useEffect(() => {
-    const fetchSpaces = async () => {
-      try {
-        setLoading(true);
-        const response = await spaceService.getAllSpaces();
-        if (response.data.success) {
-          setSpaces(response.data.data.spaces);
-        }
-      } catch (err) {
-        console.error("API Error:", err);
-        // Fallback Mock Data for Demo
-        setSpaces([
-          {
-            spaceId: 1,
-            spaceName: "Mustafa İnan Library - Study Room 2",
-            building: { buildingName: "Mustafa İnan Library", campus: { campusName: "Ayazağa Campus" } },
-            capacity: 25,
-            roomType: "Group Study",
-            noiseLevel: "Collaborative",
-            status: "Available",
-            operatingHours: { weekday: { end: "22:00" } }
-          },
-          {
-            spaceId: 2,
-            spaceName: "MED Building - Quiet Study Area",
-            building: { buildingName: "MED Building", campus: { campusName: "Ayazağa Campus" } },
-            capacity: 40,
-            roomType: "Individual",
-            noiseLevel: "Silent",
-            status: "Occupied",
-            operatingHours: { weekday: { end: "18:00" } }
-          },
-          // Add more mock items if needed based on HTML
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSpaces();
-  }, []);
+  const handlePageChange = (newPage) => {
+    actions.changePage(newPage);
+  };
 
   const handleFilterChange = (e) => {
     const { id, value } = e.target;
     // Map HTML IDs to state keys
     const keyMap = {
-      'campus-filter': 'campus',
-      'building-filter': 'building',
-      'room-type-filter': 'roomType',
+      'room-type-filter': 'type',
       'noise-level-filter': 'noiseLevel'
     };
-    setFilters(prev => ({ ...prev, [keyMap[id]]: value }));
+    actions.updateFilters({ [keyMap[id]]: value });
   };
 
   const handleCapacityChange = (e) => {
-    setFilters(prev => ({ ...prev, capacity: parseInt(e.target.value) }));
+    actions.updateFilters({ capacity: parseInt(e.target.value) || 'All' });
   };
 
-  // --- FIX 2: Simplified Toggle Handler ---
   const handleAvailableToggle = () => {
-    setFilters(prev => ({ ...prev, availableNow: !prev.availableNow }));
+    actions.updateFilters({ available: !filters.available });
   };
 
-  // Filter Logic
-  const filteredSpaces = spaces.filter(space => {
-    // 1. Search Term
-    if (searchTerm && !space.spaceName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    
-    // 2. Dropdown Filters (Simple exact match logic)
-    // Note: In real app, match values like 'ayazaga' to 'Ayazağa Campus' mapping
-    // For now, we skip if filter is empty string
-    
-    // 3. Capacity
-    if (space.capacity < filters.capacity) return false;
+  const handleSearchChange = (e) => {
+    actions.updateSearchTerm(e.target.value);
+  };
 
-    // 4. Available Now
-    if (filters.availableNow && space.status !== 'Available') return false;
+  // Local state for slider to allow smooth sliding without constant API calls
+  const [localCapacity, setLocalCapacity] = useState([0, 200]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('list');
 
-    return true;
-  });
+  // Sync local slider with global filter state (e.g. on reset)
+  useEffect(() => {
+    if (Array.isArray(filters.capacity)) {
+      setLocalCapacity(filters.capacity);
+    } else if (filters.capacity === 'All') {
+      setLocalCapacity([0, 200]);
+    } else if (typeof filters.capacity === 'number') {
+      setLocalCapacity([filters.capacity, 200]);
+    }
+  }, [filters.capacity]);
+
+  // Navigation
+  const handleViewDetails = (space) => {
+    navigate(`/spaces/${space.spaceId}`, {
+      state: { spaceData: space }
+    });
+  };
 
   return (
-    <div className="landing-container dark">
+    <div className={`${styles['landing-container']} ${styles['dark']}`}>
       {/* Header */}
-      <header className="landing-header">
-        <div className="brand-title">İTÜ Study Space Finder</div>
-        
-        <div className="header-nav">
-          <div className="nav-links-desktop">
-            <button className="nav-link" onClick={() => navigate('/profile')}>My Bookings</button>
-          </div>
-          
-          {/* Added Auth Buttons */}
-          <div className="auth-buttons">
-            <button className="btn-login" onClick={() => navigate('/login')}>Login</button>
-            <button className="btn-signup" onClick={() => navigate('/register')}>Sign Up</button>
-          </div>
-          
-          <div className="user-avatar" onClick={() => navigate('/login')}>
-            <span className="material-symbols-outlined">person</span>
-          </div>
-        </div>
-      </header>
+      <Header />
 
-      <main className="landing-main">
+      <main className={`${styles['landing-main']}`}>
+        {/* Mobile Sidebar Overlay */}
+        {isSidebarOpen && (
+          <div
+            className={`${styles['sidebar-overlay']}`}
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar Filters */}
-        <aside className="filter-sidebar">
-          <div className="filter-header">
-            <h2>Filters</h2>
-            <p>Refine your search.</p>
+        <aside className={`${styles['filter-sidebar']} ${isSidebarOpen ? styles.open : ''}`}>
+          <div className={`${styles['filter-header']}`}>
+            <div>
+              <h2>Filters</h2>
+              <p>Refine your search.</p>
+            </div>
+            <button
+              className={`${styles['close-sidebar-btn']}`}
+              onClick={() => setIsSidebarOpen(false)}
+            >
+              <span className={`material-symbols-outlined`}>close</span>
+            </button>
           </div>
 
-          <div className="filter-section">
-            <h3 className="filter-title">General</h3>
-            <div className="search-input-wrapper">
-              <input 
-                type="text" 
-                placeholder="Search by name..." 
-                className="search-input"
+          <div className={`${styles['filter-section']}`}>
+            <div className={`${styles['search-input-wrapper']}`} style={{ marginBottom: '24px' }}>
+              <input
+                type="text"
+                placeholder="Search..."
+                className={`${styles['search-input']}`}
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
               />
-              <span className="material-symbols-outlined search-icon">search</span>
+              <span className={`material-symbols-outlined ${styles['search-icon']}`}>search</span>
             </div>
-          </div>
 
-          <div className="filter-section">
-            <h3 className="filter-title">Location</h3>
-            <select id="campus-filter" className="filter-select" onChange={handleFilterChange}>
-              <option value="">All Campuses</option>
-              <option value="Ayazağa Campus">Ayazağa Campus</option>
-              <option value="Gümüşsuyu Campus">Gümüşsuyu Campus</option>
-              <option value="Taşkışla Campus">Taşkışla Campus</option>
-            </select>
-            <select id="building-filter" className="filter-select" onChange={handleFilterChange}>
-              <option value="">All Buildings</option>
-              <option value="Library">Kütüphane</option>
-              <option value="MED">MED</option>
-              <option value="Insaat">İnşaat Fakültesi</option>
-            </select>
-          </div>
-
-          <div className="filter-section">
-            <h3 className="filter-title">Room Specifications</h3>
-            <select id="room-type-filter" className="filter-select" onChange={handleFilterChange}>
-              <option value="">All Room Types</option>
-              <option value="Group Study">Group Study</option>
-              <option value="Individual">Individual</option>
-              <option value="Private Room">Private Room</option>
-            </select>
-            <select id="noise-level-filter" className="filter-select" onChange={handleFilterChange}>
-              <option value="">All Noise Levels</option>
-              <option value="Silent">Silent</option>
-              <option value="Quiet">Quiet</option>
-              <option value="Collaborative">Collaborative</option>
-            </select>
-          </div>
-
-          <div className="filter-section">
-            <h3 className="filter-title">Capacity</h3>
-            <div className="capacity-wrapper">
-              <input 
-                type="range" 
-                min="1" 
-                max="30" 
-                value={filters.capacity} 
-                className="capacity-slider"
-                onChange={handleCapacityChange}
-              />
-              <span className="capacity-label">{filters.capacity}+</span>
+            <div className={`${styles['filter-group']}`}>
+              <h3 className={`${styles['filter-title']}`}>Campus</h3>
+              <select
+                className={`${styles['filter-select']}`}
+                value={filters.campus}
+                onChange={(e) => actions.updateFilters({ campus: e.target.value })}
+              >
+                <option value="All">All Campuses</option>
+                {meta.campuses.map(c => <option key={c.campus_id} value={c.campus_name}>{c.campus_name}</option>)}
+              </select>
             </div>
-            
-            {/* FIX 2: Correct onClick handler */}
-            <div className="toggle-wrapper" onClick={handleAvailableToggle}>
-              <label className="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  checked={filters.availableNow}
-                  readOnly // Controlled by parent div
+
+            <div className={`${styles['filter-group']}`}>
+              <h3 className={`${styles['filter-title']}`}>Building</h3>
+              <select
+                className={`${styles['filter-select']}`}
+                value={filters.building}
+                onChange={(e) => actions.updateFilters({ building: e.target.value })}
+              >
+                <option value="All">All Buildings</option>
+                {meta.buildings
+                  .filter(b => filters.campus === 'All' || !b.campus_id || (meta.campuses.find(c => c.campus_name === filters.campus)?.campus_id === b.campus_id))
+                  .map(b => (
+                    <option key={b.building_id} value={b.building_name}>{b.building_name}</option>
+                  ))}
+              </select>
+            </div>
+
+            <div className={`${styles['filter-group']}`}>
+              <h3 className={`${styles['filter-title']}`}>Room Type</h3>
+              <select
+                id="room-type-filter"
+                className={`${styles['filter-select']}`}
+                value={filters.type}
+                onChange={handleFilterChange}
+              >
+                <option value="All">All Types</option>
+                {meta.roomTypes.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+
+            <div className={`${styles['filter-group']}`}>
+              <h3 className={`${styles['filter-title']}`}>Noise Level</h3>
+              <select
+                id="noise-level-filter"
+                className={`${styles['filter-select']}`}
+                value={filters.noiseLevel}
+                onChange={handleFilterChange}
+              >
+                <option value="All">All Levels</option>
+                {meta.noiseLevels.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+
+            <div className={`${styles['filter-group']}`}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h3 className={`${styles['filter-title']}`}>Capacity</h3>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  {`${localCapacity[0]} - ${localCapacity[1]}`} People
+                </span>
+              </div>
+              <div style={{ padding: '0 8px' }}>
+                <Slider
+                  range
+                  min={0}
+                  max={200}
+                  step={5}
+                  value={localCapacity}
+                  onChange={(value) => setLocalCapacity(value)}
+                  onChangeComplete={(value) => actions.updateFilters({ capacity: value })}
+                  trackStyle={[{ backgroundColor: 'var(--primary-color)' }]}
+                  handleStyle={[
+                    { borderColor: 'var(--primary-color)', backgroundColor: 'white', opacity: 1, boxShadow: 'none' },
+                    { borderColor: 'var(--primary-color)', backgroundColor: 'white', opacity: 1, boxShadow: 'none' }
+                  ]}
+                  railStyle={{ backgroundColor: 'var(--border-main)' }}
                 />
-                <span className="slider"></span>
-              </label>
-              <span className="toggle-label">Available Now</span>
+              </div>
+            </div>
+
+            <div className={`${styles['filter-group']}`}>
+              <h3 className={`${styles['filter-title']}`}>Available Now</h3>
+              <div className={`${styles['toggle-wrapper']}`} style={{ marginTop: '8px' }}>
+                <label className={`${styles['toggle-switch']}`}>
+                  <input
+                    type="checkbox"
+                    checked={!!filters.available}
+                    onChange={handleAvailableToggle}
+                  />
+                  <span className={`${styles['slider']}`}></span>
+                </label>
+              </div>
             </div>
           </div>
 
-          <div className="filter-actions">
-            <button className="btn-apply">Apply Filters</button>
-            <button className="btn-reset">Reset</button>
+          <div className={`${styles['filter-actions']}`}>
+            <button
+              className={`${styles['btn-reset']}`}
+              disabled={
+                searchTerm === '' &&
+                filters.campus === 'All' &&
+                filters.building === 'All' &&
+                filters.type === 'All' &&
+                filters.noiseLevel === 'All' &&
+                filters.available === false &&
+                (filters.capacity === 'All' || (Array.isArray(filters.capacity) && filters.capacity[0] === 0 && filters.capacity[1] === 200))
+              }
+              onClick={() => actions.updateFilters({
+                campus: 'All', building: 'All', capacity: 'All', type: 'All', available: false, noiseLevel: 'All'
+              })}
+            >
+              <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>restart_alt</span>
+              Reset Filters
+            </button>
           </div>
         </aside>
 
         {/* Content Area */}
-        <div className="content-area">
-          <div className="content-header">
+        <div className={`${styles['content-area']}`}>
+          <div className={`${styles['content-header']}`}>
             <h1>Study Space Details and Availability</h1>
             <p>Search, filter, and discover the perfect spot to study across all İTÜ campuses.</p>
           </div>
 
-          <div className="controls-bar">
-            <p className="results-count">
-              Showing <span style={{fontWeight: 700, color: 'white'}}>1-{filteredSpaces.length}</span> of <span style={{fontWeight: 700, color: 'white'}}>{spaces.length}</span> results
-            </p>
-            <div className="view-toggle">
-              <button className="view-btn active">
-                <span className="material-symbols-outlined" style={{fontSize: '1.25rem'}}>list</span> List
+          <div className={`${styles['controls-bar']}`}>
+            <button
+              className={`${styles['mobile-filter-btn']}`}
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <span className={`material-symbols-outlined`}>filter_list</span>
+              Filters
+            </button>
+
+            {/* Loading Indicator for specific actions if needed, or global loader */}
+            {loading && <div style={{ position: 'absolute', top: 5, right: 60 }}><LoadingSpinner size="sm" /></div>}
+
+            {viewMode === 'list' && (
+              <p className={`${styles['results-count']}`}>
+                Showing <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  {spaces.length > 0 ? (currentPage - 1) * paginationInfo.limit + 1 : 0}-
+                  {Math.min(currentPage * paginationInfo.limit, paginationInfo.total)}
+                </span> of <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{paginationInfo.total}</span> results
+              </p>
+            )}
+            {viewMode === 'map' && (
+              <p className={`${styles['results-count']}`}>
+                Showing <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{allSpaces.length}</span> spaces on map
+              </p>
+            )}
+            <div className={`${styles['view-toggle']}`}>
+              <button
+                className={`${styles['view-btn']} ${viewMode === 'list' ? styles['active'] : ''}`}
+                onClick={() => setViewMode('list')}
+              >
+                <span className={`material-symbols-outlined`} style={{ fontSize: '1.25rem' }}>list</span> List
               </button>
-              <button className="view-btn">
-                <span className="material-symbols-outlined" style={{fontSize: '1.25rem'}}>map</span> Map
+              <button
+                className={`${styles['view-btn']} ${viewMode === 'map' ? styles['active'] : ''}`}
+                onClick={() => setViewMode('map')}
+              >
+                <span className={`material-symbols-outlined`} style={{ fontSize: '1.25rem' }}>map</span> Map
               </button>
             </div>
           </div>
 
-          {/* Spaces Grid */}
-          <div className="spaces-grid">
-            {filteredSpaces.map(space => (
-              <div key={space.spaceId} className="space-card">
-                
-                {/* FIX 1: Availability Badge */}
-                {space.status === 'Available' ? (
-                  <div className="status-badge available">
-                    <div className="dot"></div> Available Now
-                  </div>
-                ) : (
-                  <div className="status-badge booked">
-                    <div className="dot"></div> Fully Booked
-                  </div>
-                )}
+          {/* Content Area - Map or Grid */}
+          {loading ? (
+            <LoadingSpinner fullHeight text="Loading spaces..." />
+          ) : (viewMode === 'map' ? allSpaces : spaces).length === 0 ? (
+            <div className={`${styles['empty-state']}`} style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '64px 20px',
+              textAlign: 'center',
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: '16px',
+              border: '1px solid var(--border-main)',
+              marginTop: '24px'
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '4rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                search_off
+              </span>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>
+                No study spaces found
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '400px' }}>
+                We couldn't find any spaces matching your current filters. Try adjusting your search criteria or clearing filters.
+              </p>
+              <button
+                className={`${styles['btn-reset']}`}
+                style={{ marginTop: '24px', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-main)' }}
+                onClick={() => actions.updateFilters({
+                  campus: 'All', building: 'All', capacity: 'All', type: 'All', available: false, noiseLevel: 'All'
+                })}
+              >
+                Clear All Filters
+              </button>
+            </div>
+          ) : viewMode === 'map' ? (
+            <BuildingsMap spaces={allSpaces} />
+          ) : (
+            <div className={`${styles['spaces-grid']}`}>
+              {spaces.map(space => (
+                <div key={space.spaceId} className={`${styles['space-card']}`}>
 
-                <div className="card-header">
-                  <h3 className="card-title">{space.spaceName}</h3>
-                  <p className="card-subtitle">{space.building?.buildingName}, {space.building?.campus?.campusName}</p>
+                  {space.status === 'Available' ? (
+                    <div className={`${styles['landing-status-indicator']} ${styles['available']}`}>
+                      <div className={`${styles['landing-status-dot']}`}></div>
+                    </div>
+                  ) : (
+                    <div className={`${styles['landing-status-indicator']} ${styles['booked']}`}>
+                      <div className={`${styles['landing-status-dot']}`}></div>
+                    </div>
+                  )}
+
+                  <div className={`${styles['card-header']}`}>
+                    <h3 className={`${styles['card-title']}`}>{space.spaceName}</h3>
+                    <p className={`${styles['card-subtitle']}`}>{space.building?.buildingName}, {space.building?.campus?.campusName}</p>
+                  </div>
+
+                  <div className={`${styles['card-details']}`}>
+                    <div className={`${styles['detail-item']}`}>
+                      <span className={`material-symbols-outlined`}>groups</span>
+                      <span>{space.capacity} Capacity</span>
+                    </div>
+                    <div className={`${styles['detail-item']}`}>
+                      <span className={`material-symbols-outlined`}>meeting_room</span>
+                      <span>{space.roomType?.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className={`${styles['detail-item']}`}>
+                      <span className={`material-symbols-outlined`}>graphic_eq</span>
+                      <span>{space.noiseLevel}</span>
+                    </div>
+                    <div className={`${styles['detail-item']}`}>
+                      <span className={`material-symbols-outlined`}>schedule</span>
+                      <span>Until {space.operatingHours?.weekday?.end || '22:00'}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    className={`${styles['view-details-btn']}`}
+                    onClick={() => handleViewDetails(space)}
+                  >
+                    View Details
+                  </button>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="card-details">
-                  <div className="detail-item">
-                    <span className="material-symbols-outlined">groups</span>
-                    <span>{space.capacity} Capacity</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="material-symbols-outlined">meeting_room</span>
-                    <span>{space.roomType}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="material-symbols-outlined">graphic_eq</span>
-                    <span>{space.noiseLevel}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="material-symbols-outlined">schedule</span>
-                    <span>Until {space.operatingHours?.weekday?.end || '22:00'}</span>
-                  </div>
-                </div>
-
-                <button 
-                  className="view-details-btn"
-                  onClick={() => navigate(`/spaces/${space.spaceId}`)}
+          {/* Pagination - Only show in list view */}
+          {viewMode === 'list' && (
+            <div className={`${styles['pagination']}`}>
+              <p className={`${styles['pagination-text']}`}>
+                Showing page <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{currentPage}</span> of <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{paginationInfo.totalPages}</span>
+              </p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`${styles['page-btn']}`}
+                  disabled={currentPage === 1}
+                  onClick={() => handlePageChange(currentPage - 1)}
                 >
-                  View Details
+                  <span className={`material-symbols-outlined`}>chevron_left</span>
+                </button>
+
+                <button
+                  className={`${styles['page-btn']}`}
+                  disabled={currentPage === paginationInfo.totalPages}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                >
+                  <span className={`material-symbols-outlined`}>chevron_right</span>
                 </button>
               </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          <div className="pagination">
-            <p className="pagination-text">
-              Showing <span style={{fontWeight: 600, color: '#e5e7eb'}}>1</span> to <span style={{fontWeight: 600, color: '#e5e7eb'}}>{filteredSpaces.length}</span> of <span style={{fontWeight: 600, color: '#e5e7eb'}}>{spaces.length}</span> results
-            </p>
-            <div style={{display: 'flex'}}>
-              <button className="page-btn"><span className="material-symbols-outlined">chevron_left</span></button>
-              <button className="page-btn"><span className="material-symbols-outlined">chevron_right</span></button>
             </div>
-          </div>
+          )}
         </div>
       </main>
-    </div>
+    </div >
   );
 };
 
