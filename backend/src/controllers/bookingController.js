@@ -1,6 +1,7 @@
 const bookingService = require('../services/bookingService');
 const bookingModel = require('../models/bookingModel');
 const { requireSpaceManagerOrAdmin } = require('../middleware/authorizationMiddleware');
+const logAuditEvent = require('../utils/auditLogger');
 
 /**
  * Create a new booking
@@ -9,12 +10,13 @@ const { requireSpaceManagerOrAdmin } = require('../middleware/authorizationMiddl
 const createBooking = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const { spaceId, startTime, endTime, purpose } = req.body;
+    const { spaceId, startTime, endTime, attendeeCount, purpose } = req.body;
 
     const validation = bookingService.validateBookingRequest({
       spaceId,
       startTime,
       endTime,
+      attendeeCount,
       purpose,
     });
 
@@ -32,7 +34,18 @@ const createBooking = async (req, res, next) => {
       spaceId,
       startTime,
       endTime,
+      attendeeCount,
       purpose,
+    });
+
+    await logAuditEvent({
+      userId: userId,
+      actionType: 'Booking_Created',
+      targetEntityType: 'Booking',
+      targetEntityId: booking.bookingId,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: booking
     });
 
     res.status(201).json({
@@ -204,6 +217,20 @@ const cancelBooking = async (req, res, next) => {
       userId,
       cancellationReason
     );
+
+    await logAuditEvent({
+      userId: userId,
+      actionType: 'Booking_Cancelled',
+      targetEntityType: 'Booking',
+      targetEntityId: parseInt(id),
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: {
+        status: cancelledBooking.status,
+        cancelledAt: cancelledBooking.cancelledAt,
+        cancellationReason: cancelledBooking.cancellationReason
+      }
+    });
 
     res.status(200).json({
       success: true,

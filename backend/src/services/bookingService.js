@@ -2,6 +2,8 @@ const pool = require('../config/db');
 const bookingModel = require('../models/bookingModel');
 const userModel = require('../models/userModel');
 const emailService = require('./emailService');
+const { getIstanbulNow } = require('../utils/dateHelpers');
+const { addDays } = require('date-fns');
 
 /**
  * Generate unique confirmation number
@@ -47,7 +49,13 @@ const generateUniqueConfirmationNumber = async () => {
 const getSpaceById = async (spaceId) => {
   try {
     const result = await pool.query(
-      `SELECT s.*, bu.building_name, c.campus_name
+      `SELECT s.*, 
+              bu.building_name, 
+              bu.operating_hours_weekday_start as building_weekday_start,
+              bu.operating_hours_weekday_end as building_weekday_end,
+              bu.operating_hours_weekend_start as building_weekend_start,
+              bu.operating_hours_weekend_end as building_weekend_end,
+              c.campus_name
        FROM study_spaces s
        INNER JOIN buildings bu ON s.building_id = bu.building_id
        INNER JOIN campuses c ON bu.campus_id = c.campus_id
@@ -74,12 +82,12 @@ const getSpaceById = async (spaceId) => {
       status: row.status,
       operatingHours: {
         weekday: {
-          start: row.operating_hours_weekday_start?.slice(0, 5),
-          end: row.operating_hours_weekday_end?.slice(0, 5),
+          start: (row.operating_hours_weekday_start || row.building_weekday_start)?.slice(0, 5),
+          end: (row.operating_hours_weekday_end || row.building_weekday_end)?.slice(0, 5),
         },
         weekend: {
-          start: row.operating_hours_weekend_start?.slice(0, 5),
-          end: row.operating_hours_weekend_end?.slice(0, 5),
+          start: (row.operating_hours_weekend_start || row.building_weekend_start)?.slice(0, 5),
+          end: (row.operating_hours_weekend_end || row.building_weekend_end)?.slice(0, 5),
         },
       },
       building: {
@@ -130,6 +138,11 @@ const checkOperatingHours = (space, startTime, endTime) => {
     return { valid: false, message: `Booking must start after ${operatingHours.start}` };
   }
 
+  // Handle 23:59 as end of day (24:00)
+  if (opEndHour === 23 && opEndMin === 59) {
+    opEndTime.setHours(24, 0, 0, 0); 
+  }
+
   if (bookingEnd > opEndTime) {
     return { valid: false, message: `Booking must end before ${operatingHours.end}` };
   }
@@ -160,13 +173,12 @@ const validateBookingRequest = (bookingData) => {
     if (isNaN(startTime.getTime())) {
       errors.push('Invalid startTime format');
     } else {
-      if (startTime <= new Date()) {
+      if (startTime <= getIstanbulNow()) {
         errors.push('startTime must be in the future');
       }
 
       const maxDaysAhead = 14;
-      const maxDate = new Date();
-      maxDate.setDate(maxDate.getDate() + maxDaysAhead);
+      const maxDate = addDays(getIstanbulNow(), maxDaysAhead);
       if (startTime > maxDate) {
         errors.push(`startTime must be within ${maxDaysAhead} days`);
       }
@@ -192,6 +204,13 @@ const validateBookingRequest = (bookingData) => {
       if (durationMinutes > 180) {
         errors.push('Booking duration must be at most 180 minutes');
       }
+    }
+  }
+
+  // Validate attendeeCount
+  if (bookingData.attendeeCount !== undefined) {
+    if (typeof bookingData.attendeeCount !== 'number' || bookingData.attendeeCount < 1 || !Number.isInteger(bookingData.attendeeCount)) {
+      errors.push('attendeeCount must be a positive integer');
     }
   }
 
@@ -319,6 +338,7 @@ const createBooking = async (userId, bookingData) => {
         startTime,
         endTime,
         confirmationNumber,
+        attendeeCount: bookingData.attendeeCount || 1,
         purpose: bookingData.purpose || null,
       },
       client
@@ -377,8 +397,7 @@ const cancelBooking = async (bookingId, userId, cancellationReason = 'User_Reque
       throw error;
     }
 
-    if (booking.userId !== userId) {
-    }
+
 
     if (booking.status !== 'Confirmed') {
       await client.query('ROLLBACK');
@@ -389,7 +408,7 @@ const cancelBooking = async (bookingId, userId, cancellationReason = 'User_Reque
     }
 
     const startTime = new Date(booking.startTime);
-    const now = new Date();
+    const now = getIstanbulNow();
 
     if (startTime <= now) {
       await client.query('ROLLBACK');
@@ -461,31 +480,23 @@ const getUserBookings = async (userId, filters = {}) => {
     const offset = (page - 1) * limit;
 
     const upcomingFilters = { ...filters, type: 'upcoming', limit, offset };
-    const upcoming = await bookingModel.findByUserId(userId, upcomingFilters);
+    const upcoming = await bookingModel.findByUserIdWithSpace(userId, upcomingFilters);
     const upcomingCount = await bookingModel.countByUserId(userId, { type: 'upcoming' });
 
     const pastFilters = { ...filters, type: 'past', limit, offset };
-    const past = await bookingModel.findByUserId(userId, pastFilters);
+    const past = await bookingModel.findByUserIdWithSpace(userId, pastFilters);
     const pastCount = await bookingModel.countByUserId(userId, { type: 'past' });
 
+    const cancelledFilters = { ...filters, type: 'cancelled', limit, offset };
+    const cancelled = await bookingModel.findByUserIdWithSpace(userId, cancelledFilters);
+    const cancelledCount = await bookingModel.countByUserId(userId, { type: 'cancelled' });
+
     const totalCount = await bookingModel.countByUserId(userId);
-    const cancelledCount = await bookingModel.countByUserId(userId, { status: 'Cancelled' });
-
-    const enrichBookings = async (bookings) => {
-      return Promise.all(
-        bookings.map(async (booking) => {
-          const bookingWithSpace = await bookingModel.findByIdWithSpace(booking.bookingId);
-          return bookingWithSpace || booking;
-        })
-      );
-    };
-
-    const enrichedUpcoming = await enrichBookings(upcoming);
-    const enrichedPast = await enrichBookings(past);
 
     return {
-      upcoming: enrichedUpcoming,
-      past: enrichedPast,
+      upcoming,
+      past,
+      cancelled,
       statistics: {
         totalBookings: totalCount,
         upcomingCount,
