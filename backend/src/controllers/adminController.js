@@ -1,479 +1,860 @@
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const userModel = require('../models/userModel');
+const validationSchemas = require('../utils/validationSchemas');
+const { getIstanbulNow } = require('../utils/dateHelpers');
+const { formatInTimeZone } = require('date-fns-tz');
 
-// İstatistikleri Getir 
-exports.getSystemStats = async (req, res) => {
+// --- Helper Functions ---
+
+/**
+ * Log audit event helper
+ */
+const logAuditEvent = async (data) => {
+  const { userId, actionType, targetEntityType, targetEntityId, ipAddress, result, beforeState, afterState, errorMessage } = data;
+  const query = `
+      INSERT INTO audit_logs (
+          user_id, action_type, target_entity_type, target_entity_id,
+          ip_address, result, before_state, after_state, error_message, timestamp
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+  `;
+  const values = [
+      userId, actionType, targetEntityType, targetEntityId,
+      ipAddress, result, beforeState, afterState, errorMessage
+  ];
   try {
+      await db.query(query, values);
+  } catch (err) {
+      console.error('Audit Log Error:', err);
+  }
+};
+
+/**
+ * Get system-wide statistics for admin dashboard
+ * GET /api/admin/stats
+ */
+const getSystemStats = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    console.log("Admin Stats Request Params:", { startDate, endDate });
+
+    // Construct SQL date clauses using parameterized queries
+    let bookingDateClause = "";
+    let userDateClause = "1=1"; // Default always true
+    const queryParams = [];
     
-    const [userCounts, spaceCounts, bookingCounts] = await Promise.all([
-      db.query('SELECT COUNT(*) as total FROM users'),
-      db.query('SELECT COUNT(*) as total FROM study_spaces'),
-      db.query('SELECT COUNT(*) as total FROM bookings')
+    if (startDate && endDate) {
+        bookingDateClause = `AND start_time >= $1 AND start_time < ($2::date + interval '1 day')`;
+        userDateClause = `registration_date >= $1 AND registration_date < ($2::date + interval '1 day')`;
+        queryParams.push(startDate, endDate);
+    } else {
+        // Provide dummy parameters if missing to avoid SQL errors
+        userDateClause = "1=1";
+    }
+
+    const [
+      userStats, 
+      spaceStats, 
+      bookingStats,
+      bookingBreakdownResult,
+      peakHoursResult,
+      mostBookedResult
+    ] = await Promise.all([
+      // User statistics
+      db.query(`
+        SELECT 
+          COUNT(*) as total_users,
+          COUNT(CASE WHEN status = 'Verified' THEN 1 END) as active_users,
+          COUNT(CASE WHEN ${userDateClause} THEN 1 END) as new_users_period
+        FROM users
+        WHERE status != 'Deleted'
+      `, queryParams),
+      
+      // Space statistics
+      db.query(`
+        SELECT 
+          COUNT(*) as total_spaces,
+          COUNT(CASE WHEN status = 'Available' THEN 1 END) as available_spaces
+        FROM study_spaces
+        WHERE status != 'Deleted'
+      `),
+      
+      // Booking statistics
+      db.query(`
+        SELECT 
+          COUNT(*) as total_bookings,
+          COUNT(CASE WHEN status = 'Confirmed' AND start_time > NOW() THEN 1 END) as active_bookings_snapshot,
+          COUNT(CASE WHEN status = 'Confirmed' THEN 1 END) as confirmed_bookings,
+          COUNT(CASE WHEN status = 'Cancelled' THEN 1 END) as cancelled_bookings
+        FROM bookings
+        WHERE 1=1 ${bookingDateClause}
+      `, queryParams),
+
+      // Breakdown: Booking Status
+      db.query(`
+        SELECT
+          COUNT(CASE WHEN status = 'Confirmed' AND (start_time + INTERVAL '15 minutes') <= NOW() THEN 1 END) as completed,
+          COUNT(CASE WHEN status = 'Confirmed' AND (start_time + INTERVAL '15 minutes') > NOW() THEN 1 END) as upcoming,
+          COUNT(CASE WHEN status = 'Cancelled' THEN 1 END) as cancelled
+        FROM bookings
+        WHERE 1=1 ${bookingDateClause}
+      `, queryParams),
+
+      // Peak Usage Hours
+      db.query(`
+        SELECT 
+          EXTRACT(HOUR FROM start_time) as hour,
+          COUNT(*) as booking_count
+        FROM bookings
+        WHERE 1=1 ${bookingDateClause}
+        GROUP BY hour
+        ORDER BY hour ASC
+      `, queryParams),
+
+      // Most Booked Spaces
+      db.query(`
+        SELECT 
+          s.space_name,
+          b.building_name,
+          COUNT(bk.booking_id) as booking_count
+        FROM bookings bk
+        JOIN study_spaces s ON bk.space_id = s.space_id
+        JOIN buildings b ON s.building_id = b.building_id
+        WHERE 1=1 ${bookingDateClause}
+        GROUP BY s.space_id, s.space_name, b.building_name
+        ORDER BY booking_count DESC
+        LIMIT 5
+      `, queryParams)
     ]);
 
-    // Detaylı istatistikler 
+    const users = userStats.rows[0];
+    const spaces = spaceStats.rows[0];
+    const bookings = bookingStats.rows[0];
+    const breakdown = bookingBreakdownResult.rows[0];
     
-    const stats = {
-      totalUsers: parseInt(userCounts.rows[0].total),
-      totalSpaces: parseInt(spaceCounts.rows[0].total),
-      totalBookings: parseInt(bookingCounts.rows[0].total),
-    
-      activeUsers: parseInt(userCounts.rows[0].total), 
-      availableSpaces: parseInt(spaceCounts.rows[0].total),
-      recentActivity: {
-        newUsersLast7Days: 0, 
-        newBookingsLast7Days: 0 
-      }
-    };
-
-    res.status(200).json({
-      success: true,
-      data: { statistics: stats }
+    // Process Peak Hours into full 24h array
+    const peakHoursMap = new Map();
+    peakHoursResult.rows.forEach(row => {
+        peakHoursMap.set(parseInt(row.hour), parseInt(row.booking_count));
     });
+    
+    const peakHoursData = [];
+    for (let i = 0; i < 24; i++) {
+        peakHoursData.push({
+            hour: i,
+            count: peakHoursMap.get(i) || 0
+        });
+    }
 
+    // Process Most Booked
+    const mostBooked = mostBookedResult.rows.map(row => ({
+        name: row.space_name,
+        location: row.building_name,
+        bookings: parseInt(row.booking_count)
+    }));
+
+    // Calculate generic stats
+    const dbTotalBookings = parseInt(bookings.total_bookings) || 0;
+    const cancelledBookings = parseInt(bookings.cancelled_bookings) || 0;
+    
+    // Calculate cancellation rate based on all bookings in period
+    const cancellationRate = dbTotalBookings > 0 
+        ? ((cancelledBookings / dbTotalBookings) * 100).toFixed(1) 
+        : 0;
+
+    // Breakdown Data Processing
+    const completedCount = parseInt(breakdown.completed) || 0;
+    const upcomingCount = parseInt(breakdown.upcoming) || 0;
+    const cancelledCount = parseInt(breakdown.cancelled) || 0;
+    // User requested breakdown total to be sum of these three
+    const breakdownTotal = completedCount + upcomingCount + cancelledCount;
+
+    res.json({
+      success: true,
+      data: {
+        statistics: {
+          // Cards
+          activeUsers: parseInt(users.active_users) || 0,
+          totalSpaces: parseInt(spaces.total_spaces) || 0,
+          // Total Bookings card matches breakdown total (Completed + Upcoming + Cancelled)
+          totalBookings: breakdownTotal,
+          cancellationRate: parseFloat(cancellationRate),
+          
+          // Breakdown
+          breakdown: {
+            completed: completedCount,
+            upcoming: upcomingCount,
+            cancelled: cancelledCount,
+            total: breakdownTotal
+          },
+
+          // Charts
+          peakBookingHours: peakHoursData,
+          mostBookedSpaces: mostBooked,
+          
+          // Additional Info mainly for cards logic
+          availableSpaces: parseInt(spaces.available_spaces) || 0
+        }
+      }
+    });
   } catch (error) {
-    console.error('Stats Error:', error);
+    console.error('Get system stats error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'İstatistikler alınamadı.' }
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to retrieve system statistics'
+      }
     });
   }
 };
 
-// 2. Tüm Kullanıcıları Listele (Filtreleme ile)
-exports.getAllUsers = async (req, res) => {
+/**
+ * Get all users with filtering
+ * GET /api/admin/users
+ */
+const getAllUsers = async (req, res) => {
   try {
     const { role, status, search, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
-    // Dinamik sorgu oluşturma
-    let queryText = 'SELECT user_id, email, full_name, student_number, phone_number, role, status, registration_date, last_login FROM users WHERE 1=1';
-    const queryParams = [];
+    let whereConditions = [];
+    let queryParams = [];
     let paramIndex = 1;
 
+    // Apply filters
     if (role) {
-      queryText += ` AND role = $${paramIndex}`;
+      whereConditions.push(`u.role = $${paramIndex}`);
       queryParams.push(role);
       paramIndex++;
     }
 
-    if (status) {
-      queryText += ` AND status = $${paramIndex}`;
+    // Status Filter
+    if (status === 'Deleted') {
+      whereConditions.push("u.status = 'Deleted'");
+    } else if (!status || status === 'All') {
+      whereConditions.push("u.status IN ('Verified', 'Suspended', 'Unverified')");
+    } else {
+      whereConditions.push(`u.status = $${paramIndex}`);
       queryParams.push(status);
       paramIndex++;
     }
 
     if (search) {
-      queryText += ` AND (full_name ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
+      whereConditions.push(`(u.full_name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`);
       queryParams.push(`%${search}%`);
       paramIndex++;
     }
 
-    // Sıralama ve Sayfalama ekle
-    queryText += ` ORDER BY user_id DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    const whereClause = whereConditions.join(' AND ');
+
+    // Get total count
+    const countResult = await db.query(
+      `SELECT COUNT(*) as total FROM users u WHERE ${whereClause}`,
+      queryParams
+    );
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get users with booking count
     queryParams.push(limit, offset);
+    const usersResult = await db.query(
+      `SELECT 
+        u.user_id,
+        u.email,
+        u.full_name,
+        u.student_number,
+        u.phone_number,
+        u.role,
+        u.status,
+        u.email_verified,
+        u.registration_date,
+        u.last_login,
+        u.updated_at,
+        COUNT(b.booking_id) as booking_count
+      FROM users u
+      LEFT JOIN bookings b ON u.user_id = b.user_id
+      WHERE ${whereClause}
+      GROUP BY u.user_id
+      ORDER BY u.registration_date DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      queryParams
+    );
 
-    const result = await db.query(queryText, queryParams);
-    
-   
-    const countResult = await db.query('SELECT COUNT(*) FROM users');
+    const users = usersResult.rows.map(user => ({
+      userId: user.user_id,
+      email: user.email,
+      fullName: user.full_name,
+      studentNumber: user.student_number,
+      phoneNumber: user.phone_number,
+      role: user.role,
+      status: user.status,
+      emailVerified: user.email_verified,
+      registrationDate: user.registration_date,
+      lastLogin: user.last_login,
+      updatedAt: user.updated_at,
+      bookingCount: parseInt(user.booking_count) || 0
+    }));
 
-    res.status(200).json({
+    res.json({
       success: true,
       data: {
-        users: result.rows, 
+        users,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: parseInt(countResult.rows[0].count)
+          total,
+          totalPages: Math.ceil(total / limit)
         }
       }
     });
-
   } catch (error) {
-    console.error('Get Users Error:', error);
+    console.error('Get all users error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Kullanıcılar listelenemedi.' }
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to retrieve users'
+      }
     });
   }
 };
 
-//  Kullanıcı Üzerinde Yönetici İşlemi 
-exports.updateUser = async (req, res) => {
-  const userId = req.params.id;
-  const { action, params } = req.body; 
-
+/**
+ * Update user (admin actions)
+ * PUT /api/admin/users/:id
+ */
+const updateUser = async (req, res) => {
   try {
-    let queryText = '';
-    let queryParams = [];
+    const userId = parseInt(req.params.id);
+    const { action, params } = req.body;
 
+    // Validate user exists
+    const user = await userModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'User not found'
+        }
+      });
+    }
+
+    let updatedUser;
 
     switch (action) {
       case 'changeRole':
-        queryText = 'UPDATE users SET role = $1 WHERE user_id = $2 RETURNING *';
-        queryParams = [params.role, userId];
+        if (!params?.role || !['Student', 'Space_Manager', 'Administrator'].includes(params.role)) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid role specified'
+            }
+          });
+        }
+        updatedUser = await userModel.update(userId, { role: params.role });
+        
+        await logAuditEvent({
+          userId: req.user?.userId || null,
+          actionType: 'Role_Changed',
+          targetEntityType: 'User',
+          targetEntityId: userId,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          result: 'Success',
+          beforeState: { role: user.role },
+          afterState: { role: params.role }
+        });
         break;
 
       case 'suspend':
-       
-        queryText = 'UPDATE users SET status = $1 WHERE user_id = $2 RETURNING *';
-        queryParams = ['Suspended', userId];
+        // Cancel all active bookings
+        await db.query(
+          `UPDATE bookings 
+           SET status = 'Cancelled', 
+               cancelled_at = NOW(),
+               cancellation_reason = 'Administrative'
+           WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
+          [userId]
+        );
+        
+        updatedUser = await userModel.update(userId, { status: 'Suspended' });
+        
+        await logAuditEvent({
+          userId: req.user?.userId || null,
+          actionType: 'Account_Suspended',
+          targetEntityType: 'User',
+          targetEntityId: userId,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          result: 'Success',
+          beforeState: { status: user.status },
+          afterState: { status: 'Suspended' }
+        });
         break;
 
       case 'restore':
-        queryText = 'UPDATE users SET status = $1 WHERE user_id = $2 RETURNING *';
-        queryParams = ['Verified', userId];
+        updatedUser = await userModel.update(userId, { status: 'Verified' });
+
+        await logAuditEvent({
+          userId: req.user?.userId || null,
+          actionType: 'Status_Changed',
+          targetEntityType: 'User',
+          targetEntityId: userId,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          result: 'Success',
+          beforeState: { status: user.status },
+          afterState: { status: 'Verified' }
+        });
         break;
-      
+
       case 'resetPassword':
-        // Geçici şifre oluştur 
-        const tempPass = 'Itu12345';
-        const salt = await bcrypt.genSalt(10);
-        const hash = await bcrypt.hash(tempPass, salt);
+        // Generate temporary password
+        const tempPassword = crypto.randomBytes(8).toString('hex');
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
         
-        queryText = 'UPDATE users SET password_hash = $1 WHERE user_id = $2 RETURNING *';
-        queryParams = [hash, userId];
-        break;
+        await db.query(
+          'UPDATE users SET password_hash = $1 WHERE user_id = $2',
+          [hashedPassword, userId]
+        );
+        
+        updatedUser = await userModel.findById(userId);
+
+        await logAuditEvent({
+          userId: req.user?.userId || null,
+          actionType: 'Password_Reset',
+          targetEntityType: 'User',
+          targetEntityId: userId,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          result: 'Success',
+          afterState: { action: 'admin_reset_password', timestamp: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX") }
+        });
+
+        return res.json({
+          success: true,
+          message: 'Password reset successfully',
+          data: {
+            user: {
+              userId: updatedUser.user_id,
+              email: updatedUser.email,
+              fullName: updatedUser.full_name,
+              role: updatedUser.role,
+              status: updatedUser.status
+            },
+            temporaryPassword: tempPassword
+          }
+        });
 
       default:
         return res.status(400).json({
           success: false,
-          error: { code: 'VALIDATION_ERROR', message: 'Geçersiz aksiyon türü.' }
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid action specified'
+          }
         });
     }
 
-    
-    const result = await db.query(queryText, queryParams);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Kullanıcı bulunamadı.' } });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
-      message: 'Kullanıcı güncellendi.',
-      data: { user: result.rows[0] }
+      message: 'User updated successfully',
+      data: {
+        user: {
+          userId: updatedUser.user_id,
+          email: updatedUser.email,
+          fullName: updatedUser.full_name,
+          studentNumber: updatedUser.student_number,
+          phoneNumber: updatedUser.phone_number,
+          role: updatedUser.role,
+          status: updatedUser.status,
+          emailVerified: updatedUser.email_verified,
+          registrationDate: updatedUser.registration_date,
+          lastLogin: updatedUser.last_login
+        }
+      }
     });
-
   } catch (error) {
-    console.error('Update User Error:', error);
+    console.error('Update user error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'İşlem başarısız oldu.' }
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to update user'
+      }
     });
   }
 };
 
-// --- ADMIN SPACE YÖNETİMİ ---
-
-// Tüm Mekanları Getir 
-exports.getAllSpacesAdmin = async (req, res) => {
+/**
+ * Delete user (soft delete)
+ * DELETE /api/admin/users/:id
+ */
+const deleteUser = async (req, res) => {
   try {
-    const { campus, building, status, page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
+    const userId = parseInt(req.params.id);
 
-    let queryText = `
-      SELECT s.*, b.building_name, c.campus_name 
-      FROM study_spaces s
-      JOIN buildings b ON s.building_id = b.building_id
-      JOIN campuses c ON b.campus_id = c.campus_id
-      WHERE 1=1
-    `;
-    const queryParams = [];
-    let paramIndex = 1;
-
-    // Filtreler
-    if (campus) {
-      queryText += ` AND c.campus_name ILIKE $${paramIndex}`;
-      queryParams.push(`%${campus}%`);
-      paramIndex++;
-    }
-    if (building) {
-      queryText += ` AND b.building_name ILIKE $${paramIndex}`;
-      queryParams.push(`%${building}%`);
-      paramIndex++;
-    }
-    if (status) {
-      queryText += ` AND s.status = $${paramIndex}`;
-      queryParams.push(status);
-      paramIndex++;
+    // Validate user exists
+    const user = await userModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'User not found'
+        }
+      });
     }
 
-    // Sıralama ve Sayfalama
-    queryText += ` ORDER BY s.space_id DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    queryParams.push(limit, offset);
+    // Check if user is the last administrator
+    if (user.role === 'Administrator') {
+      const adminCountResult = await db.query(
+        "SELECT COUNT(*) as count FROM users WHERE role = 'Administrator' AND status != 'Deleted'"
+      );
+      const adminCount = parseInt(adminCountResult.rows[0].count);
+      
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'OPERATION_NOT_ALLOWED',
+            message: 'Cannot delete the last administrator account.'
+          }
+        });
+      }
+    }
 
-    const result = await db.query(queryText, queryParams);
-    const countResult = await db.query('SELECT COUNT(*) FROM study_spaces');
+    // Cancel all active bookings
+    await db.query(
+      `UPDATE bookings 
+       SET status = 'Cancelled', 
+           cancelled_at = NOW(),
+           cancellation_reason = 'Administrative'
+       WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
+      [userId]
+    );
 
-    res.status(200).json({
+    // Perform soft delete with anonymization to free up email/studentNumber for re-registration
+    const timestamp = Date.now();
+    const updates = { 
+      status: 'Deleted'
+    };
+
+    if (user.email) {
+        const [localPart, domain] = user.email.split('@');
+        updates.email = `${localPart}_deleted_${timestamp}@${domain || 'itu.edu.tr'}`;
+    }
+    if (user.student_number) {
+        updates.student_number = `${user.student_number}_deleted_${timestamp}`;
+    }
+
+    await userModel.update(userId, updates);
+
+    await logAuditEvent({
+      userId: req.user?.userId || null,
+      actionType: 'Status_Changed',
+      targetEntityType: 'User',
+      targetEntityId: userId,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      beforeState: { 
+          status: user.status,
+          email: user.email,
+          studentNumber: user.student_number
+      },
+      afterState: { 
+          status: 'Deleted',
+          email: updates.email,
+          studentNumber: updates.studentNumber
+      }
+    });
+
+    res.json({
       success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to delete user'
+      }
+    });
+  }
+};
+
+/**
+ * Create user (Admin Action)
+ * POST /api/admin/users
+ */
+const createUser = async (req, res) => {
+  try {
+    const { email, password, fullName, role, studentNumber, phoneNumber } = req.body;
+
+    // Basic field check
+    if (!email || !password || !fullName || !role) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Missing required fields'
+        }
+      });
+    }
+
+    // Advanced Validation
+    if (!validationSchemas.isValidGenericEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid email format'
+        }
+      });
+    }
+
+    const pwValidation = validationSchemas.validatePassword(password);
+    if (!pwValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: pwValidation.message
+        }
+      });
+    }
+
+    if (phoneNumber && !validationSchemas.isValidPhoneNumber(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid phone number format'
+        }
+      });
+    }
+
+    // Check conflict
+    const existingUser = await userModel.findByEmail(email);
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'CONFLICT',
+          message: 'Email already exists'
+        }
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert user
+    const result = await db.query(
+      `INSERT INTO users (
+        email, password_hash, full_name, student_number, phone_number, role, status, email_verified, registration_date
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'Verified', true, NOW())
+      RETURNING *`,
+      [email, hashedPassword, fullName, studentNumber || null, phoneNumber || null, role]
+    );
+
+    const newUser = result.rows[0];
+
+    await logAuditEvent({
+      userId: req.user?.userId || null,
+      actionType: 'User_Registered',
+      targetEntityType: 'User',
+      targetEntityId: newUser.user_id,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: {
+        userId: newUser.user_id,
+        email: newUser.email,
+        role: newUser.role,
+        status: newUser.status,
+        status: newUser.status,
+        createdBy: 'Admin',
+        createdById: req.user?.userId || null
+      }
+    });
+
+    // Response structure matching other endpoints
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
       data: {
-        spaces: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: parseInt(countResult.rows[0].count)
+        user: {
+          userId: newUser.user_id,
+          email: newUser.email,
+          fullName: newUser.full_name,
+          role: newUser.role,
+          status: newUser.status,
+          studentNumber: newUser.student_number
         }
       }
     });
 
   } catch (error) {
-    console.error('Admin Get Spaces Error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Mekanlar alınamadı.' } });
-  }
-};
-
-//  Yeni Mekan Oluştur 
-exports.createSpace = async (req, res) => {
-  const client = await db.connect(); 
-  try {
-    await client.query('BEGIN'); 
-
-    const { 
-      buildingId, spaceName, roomNumber, floor, capacity, 
-      roomType, noiseLevel, description, amenities, 
-      operatingHours, accessibilityFeatures 
-    } = req.body;
-
-    // Oda numarası çakışma kontrolü 
-    const checkQuery = 'SELECT * FROM study_spaces WHERE building_id = $1 AND room_number = $2';
-    const checkResult = await client.query(checkQuery, [buildingId, roomNumber]);
-
-    if (checkResult.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ 
-        success: false, 
-        error: { code: 'DUPLICATE_ENTRY', message: 'Bu binada bu oda numarası zaten var.' } 
-      });
-    }
-
-    const insertQuery = `
-      INSERT INTO study_spaces (
-        building_id, space_name, room_number, floor, capacity, 
-        room_type, noise_level, description, amenities, 
-        operating_hours, accessibility_features, status
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Available')
-      RETURNING *
-    `;
-
-    const values = [
-      buildingId, spaceName, roomNumber, floor, capacity, 
-      roomType, noiseLevel, description, amenities, 
-      operatingHours, accessibilityFeatures
-    ];
-
-    const result = await client.query(insertQuery, values);
-    
-   
-
-    await client.query('COMMIT'); 
-
-    res.status(201).json({
-      success: true,
-      message: 'Mekan başarıyla oluşturuldu.',
-      data: { space: result.rows[0] }
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK'); 
-    console.error('Create Space Error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Mekan oluşturulamadı.' } });
-  } finally {
-    client.release();
-  }
-};
-
-//  Mekan Güncelle
-exports.updateSpace = async (req, res) => {
-  const spaceId = req.params.id;
-  const updates = req.body;
-
-  try {
- 
- 
-    const fields = Object.keys(updates);
-    const values = Object.values(updates);
-    
-    if (fields.length === 0) {
-      return res.status(400).json({ success: false, message: 'Güncellenecek veri yok.' });
-    }
-
-   
-    const setClause = fields.map((field, index) => {
-     
-      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-      return `${dbField} = $${index + 1}`;
-    }).join(', ');
-
-    const queryText = `UPDATE study_spaces SET ${setClause}, updated_at = NOW() WHERE space_id = $${fields.length + 1} RETURNING *`;
-    
-    const result = await db.query(queryText, [...values, spaceId]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Mekan bulunamadı.' } });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Mekan güncellendi.',
-      data: { space: result.rows[0] }
-    });
-
-  } catch (error) {
-    console.error('Update Space Error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Güncelleme başarısız.' } });
-  }
-};
-
-// Mekan Statüsü Değiştir 
-exports.updateSpaceStatus = async (req, res) => {
-  const spaceId = req.params.id;
-  const { status, maintenanceStartDate, maintenanceEndDate } = req.body; 
-
-  const client = await db.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Mekanı güncelle
-    const updateQuery = `
-      UPDATE study_spaces 
-      SET status = $1, maintenance_start_date = $2, maintenance_end_date = $3, updated_at = NOW()
-      WHERE space_id = $4
-      RETURNING *
-    `;
-    const result = await client.query(updateQuery, [status, maintenanceStartDate, maintenanceEndDate, spaceId]);
-
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Mekan bulunamadı.' } });
-    }
-
-    let cancelledCount = 0;
-
-    
-    if (status === 'Maintenance' || status === 'Deleted') {
-      const cancelQuery = `
-        UPDATE bookings 
-        SET status = 'Cancelled', cancellation_reason = 'Space_Maintenance'
-        WHERE space_id = $1 AND status = 'Confirmed' AND start_time >= NOW()
-      `;
-  
-      
-      const cancelResult = await client.query(cancelQuery, [spaceId]);
-      cancelledCount = cancelResult.rowCount;
-    }
-
-    await client.query('COMMIT');
-
-    res.status(200).json({
-      success: true,
-      message: 'Mekan durumu güncellendi.',
-      data: { 
-        space: result.rows[0],
-        cancelledBookingsCount: cancelledCount
+    console.error('Create user error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to create user'
       }
     });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Status Update Error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Durum güncellenemedi.' } });
-  } finally {
-    client.release();
   }
 };
 
-//  Mekan Sil 
-exports.deleteSpaceAdmin = async (req, res) => {
 
-  req.body.status = 'Deleted';
-  req.body.maintenanceStartDate = null;
-  req.body.maintenanceEndDate = null;
-  return exports.updateSpaceStatus(req, res);
-};
 
 // --- AUDIT LOGS (DENETİM KAYITLARI) ---
 
-// Denetim Kayıtlarını Getir 
-exports.getAuditLogs = async (req, res) => {
+/**
+ * Get audit logs with filtering
+ * GET /api/admin/audit-logs
+ */
+const getAuditLogs = async (req, res) => {
   try {
-    const { dateFrom, dateTo, actionType, userId, targetEntityType, result, page = 1, limit = 50 } = req.query;
-    const offset = (page - 1) * limit;
+    const {
+      dateFrom,
+      dateTo,
+      actionType,
+      userId,
+      targetEntityType,
+      result,
+      page = 1,
+      limit = 50
+    } = req.query;
 
-    let queryText = `
-      SELECT a.*, u.email, u.full_name, u.role 
-      FROM audit_logs a
-      LEFT JOIN users u ON a.user_id = u.user_id
-      WHERE 1=1
-    `;
-    const queryParams = [];
+    const offset = (page - 1) * limit;
+    let whereConditions = [];
+    let queryParams = [];
     let paramIndex = 1;
 
-    // Filtreler
+    // Apply filters
     if (dateFrom) {
-      queryText += ` AND a.timestamp >= $${paramIndex}`;
+      whereConditions.push(`al.timestamp >= $${paramIndex}`);
       queryParams.push(dateFrom);
       paramIndex++;
     }
+
     if (dateTo) {
-      queryText += ` AND a.timestamp <= $${paramIndex}`;
+      whereConditions.push(`al.timestamp < ($${paramIndex}::date + interval '1 day')`);
       queryParams.push(dateTo);
       paramIndex++;
     }
+
     if (actionType) {
-      queryText += ` AND a.action_type = $${paramIndex}`;
+      whereConditions.push(`al.action_type = $${paramIndex}`);
       queryParams.push(actionType);
       paramIndex++;
     }
+
     if (userId) {
-      queryText += ` AND a.user_id = $${paramIndex}`;
-      queryParams.push(userId);
+      whereConditions.push(`al.user_id = $${paramIndex}`);
+      queryParams.push(parseInt(userId));
       paramIndex++;
     }
+
     if (targetEntityType) {
-      queryText += ` AND a.target_entity_type = $${paramIndex}`;
+      whereConditions.push(`al.target_entity_type = $${paramIndex}`);
       queryParams.push(targetEntityType);
       paramIndex++;
     }
+
     if (result) {
-      queryText += ` AND a.result = $${paramIndex}`;
+      whereConditions.push(`al.result = $${paramIndex}`);
       queryParams.push(result);
       paramIndex++;
     }
 
-    // Sıralama ve Sayfalama
-    queryText += ` ORDER BY a.timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get total count
+    const countResult = await db.query(
+      `SELECT COUNT(*) as total FROM audit_logs al ${whereClause}`,
+      queryParams
+    );
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get logs
     queryParams.push(limit, offset);
+    const logsResult = await db.query(
+      `SELECT 
+        al.log_id,
+        al.user_id,
+        al.action_type,
+        al.target_entity_type,
+        al.target_entity_id,
+        al.ip_address,
+        al.before_state,
+        al.after_state,
+        al.result,
+        al.error_message,
+        al.timestamp,
+        u.email as user_email,
+        u.full_name as user_name,
+        target_u.email as target_email,
+        target_u.full_name as target_full_name
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.user_id
+      LEFT JOIN users target_u ON al.target_entity_type = 'User' AND al.target_entity_id = target_u.user_id
+      ${whereClause}
+      ORDER BY al.timestamp DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      queryParams
+    );
 
-    const resultData = await db.query(queryText, queryParams);
-    
-    // Toplam kayıt sayısı 
-   
-    const countResult = await db.query('SELECT COUNT(*) FROM audit_logs');
+    const logs = logsResult.rows.map(log => ({
+      logId: log.log_id,
+      userId: log.user_id,
+      user: log.user_id ? {
+        email: log.user_email,
+        fullName: log.user_name
+      } : null,
+      targetUser: (log.target_entity_type === 'User' && log.target_email) ? {
+          email: log.target_email,
+          fullName: log.target_full_name
+      } : null,
+      actionType: log.action_type,
+      targetEntityType: log.target_entity_type,
+      targetEntityId: log.target_entity_id,
+      ipAddress: log.ip_address,
+      beforeState: log.before_state,
+      afterState: log.after_state,
+      result: log.result,
+      errorMessage: log.error_message,
+      timestamp: log.timestamp
+    }));
 
-    res.status(200).json({
+    res.json({
       success: true,
       data: {
-        logs: resultData.rows,
+        logs,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: parseInt(countResult.rows[0].count)
+          total,
+          totalPages: Math.ceil(total / limit)
         }
       }
     });
-
   } catch (error) {
-    console.error('Get Audit Logs Error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Kayıtlar alınamadı.' } });
+    console.error('Get audit logs error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to retrieve audit logs'
+      }
+    });
   }
 };
 
 //  Audit Logları Dışa Aktar 
-exports.exportAuditLogs = async (req, res) => {
+const exportAuditLogs = async (req, res) => {
   try {
     const { format = 'json', filters = {} } = req.body; 
     const { dateFrom, dateTo, actionType, userId } = filters;
@@ -490,7 +871,7 @@ exports.exportAuditLogs = async (req, res) => {
 
     
     if (dateFrom) { queryText += ` AND a.timestamp >= $${paramIndex}`; queryParams.push(dateFrom); paramIndex++; }
-    if (dateTo) { queryText += ` AND a.timestamp <= $${paramIndex}`; queryParams.push(dateTo); paramIndex++; }
+    if (dateTo) { queryText += ` AND a.timestamp < ($${paramIndex}::date + interval '1 day')`; queryParams.push(dateTo); paramIndex++; }
     if (actionType) { queryText += ` AND a.action_type = $${paramIndex}`; queryParams.push(actionType); paramIndex++; }
     if (userId) { queryText += ` AND a.user_id = $${paramIndex}`; queryParams.push(userId); paramIndex++; }
 
@@ -526,4 +907,14 @@ exports.exportAuditLogs = async (req, res) => {
     console.error('Export Error:', error);
     res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Export başarısız.' } });
   }
+};
+
+module.exports = {
+  getSystemStats,
+  getAllUsers,
+  updateUser,
+  deleteUser,
+  createUser,
+  getAuditLogs,
+  exportAuditLogs
 };

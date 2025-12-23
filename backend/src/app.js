@@ -13,7 +13,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-
 // Basit health check
 app.get("/", (req, res) => {
   res.send("Eorlingas backend is running 🚀");
@@ -34,6 +33,6 @@ app.get("/health/db", async (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
 app.use('/api/spaces', spaceRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/bookings', require('./routes/bookingRoutes'));
+app.use('/api/admin', adminRoutes);
 module.exports = app;

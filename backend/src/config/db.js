@@ -4,7 +4,11 @@ require("dotenv").config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ...(process.env.NODE_ENV === 'production' && {
+  options: "-c timezone=Europe/Istanbul",
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000, 
+  ...((process.env.NODE_ENV === 'production' || process.env.DATABASE_URL.includes('render.com')) && {
     ssl: {
       rejectUnauthorized: false   // Render için şart
     }

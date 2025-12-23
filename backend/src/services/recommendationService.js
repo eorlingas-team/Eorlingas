@@ -53,7 +53,7 @@ const scoreAndSortSpaces = async (candidateSpaces, userId) => {
         FROM bookings bk
         JOIN study_spaces s ON bk.space_id = s.space_id
         JOIN buildings b ON s.building_id = b.building_id
-        WHERE bk.user_id = $1 AND bk.status IN ('Confirmed', 'Completed')
+        WHERE bk.user_id = $1
       `;
       const historyResult = await pool.query(historyQuery, [userId]);
       if (historyResult.rows.length > 0) {
@@ -67,7 +67,6 @@ const scoreAndSortSpaces = async (candidateSpaces, userId) => {
       const popularityQuery = `
         SELECT space_id, COUNT(*) as count 
         FROM bookings 
-        WHERE status IN ('Confirmed', 'Completed') 
         GROUP BY space_id
       `;
       const popResult = await pool.query(popularityQuery);
@@ -85,7 +84,7 @@ const scoreAndSortSpaces = async (candidateSpaces, userId) => {
       
       // Past Visits
       if (userPrefs.visitedSpaceIds.has(space.space_id)) {
-        const visitCount = historyResult.rows.filter(h => h.space_id === space.space_id).length;
+        const visitCount = historyRows.filter(h => h.space_id === space.space_id).length;
         score += visitCount * 10;
       }
 
@@ -140,7 +139,7 @@ const getPopularSpaces = async (limit = 10) => {
       FROM study_spaces s
       JOIN buildings b ON s.building_id = b.building_id
       JOIN campuses c ON b.campus_id = c.campus_id
-      LEFT JOIN bookings bk ON s.space_id = bk.space_id AND bk.status IN ('Confirmed', 'Completed')
+      LEFT JOIN bookings bk ON s.space_id = bk.space_id
       WHERE s.status = 'Available'
       GROUP BY s.space_id, b.building_id, c.campus_id, b.building_name, c.campus_name
       ORDER BY booking_count DESC

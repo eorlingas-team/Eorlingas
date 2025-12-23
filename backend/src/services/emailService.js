@@ -164,11 +164,13 @@ const formatDateTime = (dateTime) => {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: 'Europe/Istanbul'
   });
   const timeStr = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
+    timeZone: 'Europe/Istanbul'
   });
   return { date: dateStr, time: timeStr };
 };

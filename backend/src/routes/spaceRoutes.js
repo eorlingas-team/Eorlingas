@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const spaceController = require('../controllers/spaceController');
+const { optionalAuth } = require('../middleware/authMiddleware');
 
 //  Tümünü listele (Landing Page)
-router.get('/', spaceController.getAllSpaces);
+router.get('/', optionalAuth, spaceController.getAllSpaces);
 
-router.get('/search', spaceController.searchSpaces);
-
+router.get('/search', optionalAuth, spaceController.searchSpaces);
 router.get('/filters', spaceController.getFilterOptions);
+router.get('/stats', spaceController.getStats);
 
 router.get('/:id', spaceController.getSpaceById);
 

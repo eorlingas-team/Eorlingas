@@ -1,3 +1,4 @@
+const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 const userModel = require('../models/userModel');
 const {
@@ -246,9 +247,73 @@ const changePassword = async (req, res, next) => {
   }
 };
 
+/**
+ * Delete user account (self-deletion)
+ * DELETE /api/profile
+ */
+const deleteAccount = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await userModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        },
+      });
+    }
+
+    // Check if user is the last administrator
+    if (user.role === 'Administrator') {
+      const adminCountResult = await pool.query(
+        "SELECT COUNT(*) as count FROM users WHERE role = 'Administrator' AND status != 'Deleted'"
+      );
+      const adminCount = parseInt(adminCountResult.rows[0].count);
+      
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'OPERATION_NOT_ALLOWED',
+            message: 'Cannot delete the last administrator account.',
+          },
+        });
+      }
+    }
+
+    // Cancel all active bookings
+    await pool.query(
+      `UPDATE bookings 
+       SET status = 'Cancelled', 
+           cancelled_at = NOW(),
+           cancellation_reason = 'User Deleted Account'
+       WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
+      [userId]
+    );
+
+    // Perform soft delete
+    await userModel.update(userId, { status: 'Deleted' });
+
+    // Clear refresh token
+    await userModel.clearRefreshToken(userId);
+
+    res.json({
+      success: true,
+      message: 'Account deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   changePassword,
+  deleteAccount,
 };
 

@@ -14,10 +14,14 @@ const {
   validateResetPassword,
 } = require('../utils/validationSchemas');
 const pool = require('../config/db');
+const escapeHtml = require('escape-html');
 const {
   sendVerificationEmail: sendVerificationEmailService,
   sendPasswordResetEmail: sendPasswordResetEmailService,
 } = require('../services/emailService');
+const logAuditEvent = require('../utils/auditLogger');
+const { getIstanbulNow } = require('../utils/dateHelpers');
+const { formatInTimeZone } = require('date-fns-tz');
 
 /**
  * Generate a secure verification token (for database storage)
@@ -44,14 +48,17 @@ const generateVerificationCode = () => {
  */
 const sendVerificationEmail = async (to, token, code, fullName) => {
   try {
+    const safeFullName = escapeHtml(fullName || '');
+    
     await sendVerificationEmailService({
       to,
-      fullName,
+      fullName: safeFullName,
       verificationToken: token,
       verificationCode: code,
     });
   } catch (error) {
     console.error('Failed to send verification email:', error);
+    throw new Error('Failed to send verification email');
   }
 };
 
@@ -63,13 +70,16 @@ const sendVerificationEmail = async (to, token, code, fullName) => {
  */
 const sendPasswordResetEmail = async (to, token, fullName) => {
   try {
+    const safeFullName = escapeHtml(fullName || '');
+
     await sendPasswordResetEmailService({
       to,
-      fullName,
+      fullName: safeFullName,
       resetToken: token,
     });
   } catch (error) {
     console.error('Failed to send password reset email:', error);
+    throw new Error('Failed to send password reset email');
   }
 };
 
@@ -119,12 +129,27 @@ const register = async (req, res, next) => {
 
     const verificationToken = generateVerificationToken();
     const verificationCode = generateVerificationCode();
-    const tokenExpiry = new Date();
+    const tokenExpiry = getIstanbulNow();
     tokenExpiry.setHours(tokenExpiry.getHours() + 24);
 
     await userModel.setVerificationToken(user.user_id, verificationToken, verificationCode, tokenExpiry);
 
     await sendVerificationEmail(email, verificationToken, verificationCode, fullName);
+
+    await logAuditEvent({
+      userId: user.user_id,
+      actionType: 'User_Registered',
+      targetEntityType: 'User',
+      targetEntityId: user.user_id,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: {
+        userId: user.user_id,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
 
     res.status(201).json({
       success: true,
@@ -180,6 +205,7 @@ const login = async (req, res, next) => {
         ipAddress: req.ip || req.connection.remoteAddress,
         result: 'Failed',
         errorMessage: 'Invalid credentials',
+        beforeState: { attemptedEmail: email }
       });
 
       return res.status(401).json({
@@ -212,6 +238,7 @@ const login = async (req, res, next) => {
         ipAddress: req.ip || req.connection.remoteAddress,
         result: 'Failed',
         errorMessage: 'Invalid password',
+        beforeState: { attemptedEmail: email }
       });
 
       const newFailedAttempts = await userModel.getRecentFailedLoginAttempts(user.user_id);
@@ -286,7 +313,7 @@ const login = async (req, res, next) => {
       ipAddress: req.ip || req.connection.remoteAddress,
       result: 'Success',
       afterState: {
-        lastLogin: new Date().toISOString(),
+        lastLogin: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX"),
       },
     });
 
@@ -302,6 +329,9 @@ const login = async (req, res, next) => {
           fullName: user.full_name,
           role: user.role,
           status: user.status,
+          studentNumber: user.student_number || user.studentNumber,
+          createdAt: user.created_at,
+          phoneNumber: user.phone_number,
         },
       },
     });
@@ -337,7 +367,7 @@ const verifyEmail = async (req, res, next) => {
     }
     // Method 2: Code-based verification
     else if (code) {
-      if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      if (!code || typeof code !== 'string' || code.length !== 6 || !/^\d{6}$/.test(code)) {
         return res.status(400).json({
           success: false,
           error: {
@@ -379,7 +409,7 @@ const verifyEmail = async (req, res, next) => {
       });
     }
 
-    const now = new Date();
+    const now = getIstanbulNow();
     const tokenExpiry = new Date(user.verification_token_expiry);
 
     if (now > tokenExpiry) {
@@ -462,7 +492,7 @@ const resendVerification = async (req, res, next) => {
 
     const verificationToken = generateVerificationToken();
     const verificationCode = generateVerificationCode();
-    const tokenExpiry = new Date();
+    const tokenExpiry = getIstanbulNow();
     tokenExpiry.setHours(tokenExpiry.getHours() + 24);
 
     await userModel.setVerificationToken(user.user_id, verificationToken, verificationCode, tokenExpiry);
@@ -593,39 +623,7 @@ const getMe = async (req, res, next) => {
   }
 };
 
-/**
- * Logout the current user
- * POST /api/auth/logout
- */
-const logout = async (req, res, next) => {
-  try {
-    const userId = req.user.userId;
-    const { refreshToken } = req.body;
 
-    await userModel.clearRefreshToken(userId);
-
-    await logAuditEvent({
-      userId: userId,
-      actionType: 'Logout',
-      targetEntityType: 'User',
-      targetEntityId: userId,
-      ipAddress: req.ip || req.connection.remoteAddress,
-      result: 'Success',
-      afterState: {
-        action: 'logout',
-        timestamp: new Date().toISOString(),
-      },
-    });
-
-    res.status(200).json({
-      success: true,
-      message: 'Logged out successfully',
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    next(error);
-  }
-};
 
 /**
  * Request password reset
@@ -651,7 +649,7 @@ const forgotPassword = async (req, res, next) => {
     
     if (user) {
       const resetToken = generateVerificationToken();
-      const tokenExpiry = new Date();
+      const tokenExpiry = getIstanbulNow();
       tokenExpiry.setHours(tokenExpiry.getHours() + 24);
 
       await userModel.setPasswordResetToken(user.user_id, resetToken, tokenExpiry);
@@ -667,7 +665,7 @@ const forgotPassword = async (req, res, next) => {
         result: 'Success',
         afterState: {
           action: 'password_reset_requested',
-          timestamp: new Date().toISOString(),
+          timestamp: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX"),
         },
       });
     }
@@ -717,7 +715,7 @@ const resetPassword = async (req, res, next) => {
       });
     }
 
-    const now = new Date();
+    const now = getIstanbulNow();
     const tokenExpiry = new Date(user.password_reset_token_expiry);
 
     if (now > tokenExpiry) {
@@ -748,7 +746,7 @@ const resetPassword = async (req, res, next) => {
       result: 'Success',
       afterState: {
         action: 'password_reset_completed',
-        timestamp: new Date().toISOString(),
+        timestamp: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX"),
       },
     });
 
@@ -780,30 +778,34 @@ const resetPassword = async (req, res, next) => {
 };
 
 /**
- * Helper function to log audit events
- * @param {Object} logData - Audit log data
+ * Logout user
+ * POST /api/auth/logout
  */
-const logAuditEvent = async (logData) => {
+const logout = async (req, res, next) => {
   try {
-    await pool.query(
-      `INSERT INTO audit_logs (
-        user_id, action_type, target_entity_type, target_entity_id,
-        ip_address, before_state, after_state, result, error_message
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        logData.userId || null,
-        logData.actionType,
-        logData.targetEntityType,
-        logData.targetEntityId || null,
-        logData.ipAddress || null,
-        logData.beforeState ? JSON.stringify(logData.beforeState) : null,
-        logData.afterState ? JSON.stringify(logData.afterState) : null,
-        logData.result || 'Success',
-        logData.errorMessage || null,
-      ]
-    );
+    if (req.user && req.user.userId) {
+      await userModel.setRefreshToken(req.user.userId, null); // Invalidate refresh token
+      
+      await logAuditEvent({
+        userId: req.user.userId,
+        actionType: 'Logout',
+        targetEntityType: 'User',
+        targetEntityId: req.user.userId,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        result: 'Success',
+        afterState: {
+          logoutTime: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX"),
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
   } catch (error) {
-    console.error('Error logging audit event:', error);
+    console.error('Logout error:', error);
+    next(error);
   }
 };
 
