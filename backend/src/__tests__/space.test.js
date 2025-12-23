@@ -115,8 +115,12 @@ describe('Space API Unit Tests (Mock DB)', () => {
       status: 'Available'
     };
 
+    // Mock unique check query response (no existing room)
+    pool.query.mockResolvedValueOnce({ rows: [] });
     // Mock create query response
-    pool.query.mockResolvedValue({ rows: [mockDbResponse] });
+    pool.query.mockResolvedValueOnce({ rows: [mockDbResponse] });
+    // Audit log
+    pool.query.mockResolvedValueOnce({ rowCount: 1 });
 
     const res = await request(app).post('/api/spaces').send(newSpace);
 

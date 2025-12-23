@@ -1,386 +1,107 @@
-/**
- * Validation schemas for request validation
- * Simple validation functions (can be replaced with Joi or similar library later)
- */
+const Joi = require('joi');
 
 /**
- * Validate email format and domain
- * @param {string} email - Email to validate
- * @returns {boolean} True if valid
+ * Helper to format Joi error to match existing interface
+ * @param {Object} schema - Joi schema
+ * @param {Object} data - Data to validate
+ * @returns {Object} { valid: boolean, errors: string[] }
  */
-const isValidEmail = (email) => {
-  const emailRegex = /^[A-Za-z0-9._%+-]+@itu\.edu\.tr$/i;
-  return emailRegex.test(email);
-};
-
-/**
- * Validate password strength
- * @param {string} password - Password to validate
- * @returns {Object} { valid: boolean, message?: string }
- */
-const validatePassword = (password) => {
-  if (!password || password.length < 8) {
-    return { valid: false, message: 'Password must be at least 8 characters long' };
+const validateWithJoi = (schema, data) => {
+  const { error } = schema.validate(data, { abortEarly: false });
+  if (!error) {
+    return { valid: true, errors: [] };
   }
-
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, message: 'Password must contain at least one uppercase letter' };
-  }
-
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, message: 'Password must contain at least one lowercase letter' };
-  }
-
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, message: 'Password must contain at least one number' };
-  }
-
-  return { valid: true };
-};
-
-/**
- * Validate student number format
- * @param {string} studentNumber
- * @returns {boolean} True if valid
- */
-const isValidStudentNumber = (studentNumber) => {
-  if (!studentNumber) return true;
-  const trimmed = String(studentNumber).trim();
-  return /^\d{6,12}$/.test(trimmed);
-};
-
-/**
- * Validate phone number format
- * @param {string} phoneNumber - Phone number to validate
- * @returns {boolean} True if valid
- */
-const isValidPhoneNumber = (phoneNumber) => {
-  if (!phoneNumber) return true;
-  
-  const cleaned = phoneNumber.replace(/[\s\-\(\)]/g, '');
-  
-  const internationalFormat = /^\+\d{1,3}\d{7,15}$/;
-  
-  const turkishWithCountryCode = /^\+90[5]\d{9}$/;
-  
-  const turkishWithZero = /^0[5]\d{9}$/;
-  
-  const turkishDirect = /^[5]\d{9}$/;
-  
-  return (
-    internationalFormat.test(cleaned) ||
-    turkishWithCountryCode.test(cleaned) ||
-    turkishWithZero.test(cleaned) ||
-    turkishDirect.test(cleaned)
-  );
-};
-
-/**
- * Validate registration request
- * @param {Object} data - Registration data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateRegistration = (data) => {
-  const errors = [];
-
-  if (!data.email || !isValidEmail(data.email)) {
-    errors.push('Valid ITU email address (@itu.edu.tr) is required');
-  }
-
-  if (!data.password) {
-    errors.push('Password is required');
-  } else {
-    const passwordValidation = validatePassword(data.password);
-    if (!passwordValidation.valid) {
-      errors.push(passwordValidation.message);
-    }
-  }
-
-  if (data.password !== data.passwordConfirmation) {
-    errors.push('Passwords do not match');
-  }
-
-  if (!data.fullName || data.fullName.trim().length < 2) {
-    errors.push('Full name must be at least 2 characters long');
-  }
-
-  if (data.studentNumber && !isValidStudentNumber(data.studentNumber)) {
-    errors.push('Invalid student number format');
-  }
-
-  if (data.phoneNumber && !isValidPhoneNumber(data.phoneNumber)) {
-    errors.push('Invalid phone number format');
-  }
-
   return {
-    valid: errors.length === 0,
-    errors,
+    valid: false,
+    errors: error.details.map(detail => detail.message.replace(/"/g, ''))
   };
 };
 
-/**
- * Validate login request
- * @param {Object} data - Login data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateLogin = (data) => {
-  const errors = [];
+// --- Schemas ---
 
-  if (!data.email || !isValidEmail(data.email)) {
-    errors.push('Valid ITU email address is required');
-  }
+const registrationSchema = Joi.object({
+  email: Joi.string().email().pattern(/@itu\.edu\.tr$/).required().messages({
+    'string.pattern.base': 'Valid ITU email address (@itu.edu.tr) is required'
+  }),
+  password: Joi.string().min(8).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/).required().messages({
+    'string.min': 'Password must be at least 8 characters long',
+    'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number'
+  }),
+  passwordConfirmation: Joi.any().valid(Joi.ref('password')).required().messages({
+    'any.only': 'Passwords do not match'
+  }),
+  fullName: Joi.string().trim().min(2).max(255).required(),
+  studentNumber: Joi.string().trim().pattern(/^\d{6,12}$/).allow(null, '').optional(),
+  phoneNumber: Joi.string().trim().pattern(/^(\+?\d{1,3})?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})(?: *x(\d+))?$/).allow(null, '').optional(), // Simplified generic phone regex or use custom
+  role: Joi.string().valid('Student', 'Academician').optional()
+});
 
-  if (!data.password) {
-    errors.push('Password is required');
-  }
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().required()
+});
 
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
+const profileUpdateSchema = Joi.object({
+  fullName: Joi.string().trim().min(2).max(255).optional(),
+  phoneNumber: Joi.string().trim().pattern(/^(\+?\d{1,3})?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})(?: *x(\d+))?$/).allow(null, '').optional(),
+  notificationPreferences: Joi.object({
+    emailNotifications: Joi.boolean().optional(),
+    webNotifications: Joi.boolean().optional()
+  }).optional()
+});
 
-/**
- * Validate profile update request
- * @param {Object} data - Profile update data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateProfileUpdate = (data) => {
-  const errors = [];
+const passwordChangeSchema = Joi.object({
+  currentPassword: Joi.string().required(),
+  newPassword: Joi.string().min(8).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/).disallow(Joi.ref('currentPassword')).required().messages({
+    'string.min': 'Password must be at least 8 characters long',
+    'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number',
+    'any.invalid': 'New password must be different from current password'
+  }),
+  newPasswordConfirmation: Joi.any().valid(Joi.ref('newPassword')).required().messages({
+    'any.only': 'New passwords do not match'
+  })
+});
 
-  if (data.fullName !== undefined) {
-    if (!data.fullName || typeof data.fullName !== 'string') {
-      errors.push('Full name must be a non-empty string');
-    } else {
-      const trimmed = data.fullName.trim();
-      if (trimmed.length === 0) {
-        errors.push('Full name cannot be empty');
-      } else if (trimmed.length > 255) {
-        errors.push('Full name must be at most 255 characters long');
-      }
-    }
-  }
+const forgotPasswordSchema = Joi.object({
+  email: Joi.string().email().required()
+});
 
-  if (data.phoneNumber !== undefined && data.phoneNumber !== null) {
-    if (data.phoneNumber !== '' && !isValidPhoneNumber(data.phoneNumber)) {
-      errors.push('Invalid phone number format');
-    }
-  }
+const resetPasswordSchema = Joi.object({
+  token: Joi.string().required(),
+  newPassword: Joi.string().min(8).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/).required(),
+  confirmPassword: Joi.any().valid(Joi.ref('newPassword')).required()
+});
 
-  if (data.notificationPreferences !== undefined) {
-    if (
-      typeof data.notificationPreferences !== 'object' ||
-      data.notificationPreferences === null
-    ) {
-      errors.push('notificationPreferences must be an object');
-    } else {
-      if (
-        data.notificationPreferences.emailNotifications !== undefined &&
-        typeof data.notificationPreferences.emailNotifications !== 'boolean'
-      ) {
-        errors.push('emailNotifications must be a boolean');
-      }
+const bookingRequestSchema = Joi.object({
+  spaceId: Joi.number().integer().required(),
+  startTime: Joi.date().iso().required(),
+  endTime: Joi.date().iso().greater(Joi.ref('startTime')).required(),
+  purpose: Joi.string().max(500).allow(null, '').optional(),
+  attendeeCount: Joi.number().integer().min(1).optional()
+});
 
-      if (
-        data.notificationPreferences.webNotifications !== undefined &&
-        typeof data.notificationPreferences.webNotifications !== 'boolean'
-      ) {
-        errors.push('webNotifications must be a boolean');
-      }
-    }
-  }
+const bookingCancellationSchema = Joi.object({
+  reason: Joi.string().valid('User_Requested', 'Administrative', 'Space_Maintenance').optional()
+});
 
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
-
-/**
- * Validate password change request
- * @param {Object} data - Password change data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validatePasswordChange = (data) => {
-  const errors = [];
-
-  if (!data.currentPassword) {
-    errors.push('Current password is required');
-  }
-
-  if (!data.newPassword) {
-    errors.push('New password is required');
-  } else {
-    const passwordValidation = validatePassword(data.newPassword);
-    if (!passwordValidation.valid) {
-      errors.push(passwordValidation.message);
-    }
-  }
-
-  if (data.newPassword !== data.newPasswordConfirmation) {
-    errors.push('New passwords do not match');
-  }
-
-  if (data.currentPassword === data.newPassword) {
-    errors.push('New password must be different from current password');
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
-
-/**
- * Validate forgot password request
- * @param {Object} data - Forgot password data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateForgotPassword = (data) => {
-  const errors = [];
-
-  if (!data.email || !isValidEmail(data.email)) {
-    errors.push('Valid ITU email address is required');
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
-
-/**
- * Validate reset password request
- * @param {Object} data - Reset password data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateResetPassword = (data) => {
-  const errors = [];
-
-  if (!data.token) {
-    errors.push('Reset token is required');
-  }
-
-  if (!data.newPassword) {
-    errors.push('New password is required');
-  } else {
-    const passwordValidation = validatePassword(data.newPassword);
-    if (!passwordValidation.valid) {
-      errors.push(passwordValidation.message);
-    }
-  }
-
-  if (data.newPassword !== data.confirmPassword) {
-    errors.push('New passwords do not match');
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
-
-/**
- * Validate booking creation request
- * @param {Object} data - Booking data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateBookingRequest = (data) => {
-  const errors = [];
-
-  if (!data.spaceId || typeof data.spaceId !== 'number') {
-    errors.push('Valid spaceId is required');
-  }
-
-  if (!data.startTime) {
-    errors.push('startTime is required');
-  } else {
-    const startTime = new Date(data.startTime);
-    if (isNaN(startTime.getTime())) {
-      errors.push('Invalid startTime format (must be ISO 8601)');
-    } else {
-      if (startTime <= new Date()) {
-        errors.push('startTime must be in the future');
-      }
-
-      const maxDaysAhead = 14;
-      const maxDate = new Date();
-      maxDate.setDate(maxDate.getDate() + maxDaysAhead);
-      if (startTime > maxDate) {
-        errors.push(`startTime must be within ${maxDaysAhead} days`);
-      }
-    }
-  }
-
-  if (!data.endTime) {
-    errors.push('endTime is required');
-  } else {
-    const endTime = new Date(data.endTime);
-    if (isNaN(endTime.getTime())) {
-      errors.push('Invalid endTime format (must be ISO 8601)');
-    } else {
-      const startTime = new Date(data.startTime);
-      if (endTime <= startTime) {
-        errors.push('endTime must be after startTime');
-      }
-
-      const durationMinutes = (endTime - startTime) / (1000 * 60);
-      if (durationMinutes < 60) {
-        errors.push('Booking duration must be at least 60 minutes');
-      }
-      if (durationMinutes > 180) {
-        errors.push('Booking duration must be at most 180 minutes');
-      }
-    }
-  }
-
-  if (data.purpose !== undefined && data.purpose !== null) {
-    if (typeof data.purpose !== 'string') {
-      errors.push('purpose must be a string');
-    } else if (data.purpose.length > 500) {
-      errors.push('purpose must be at most 500 characters');
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
-
-/**
- * Validate booking cancellation request
- * @param {Object} data - Cancellation data
- * @returns {Object} { valid: boolean, errors: Array<string> }
- */
-const validateBookingCancellation = (data) => {
-  const errors = [];
-
-  if (data.reason !== undefined && data.reason !== null) {
-    const validReasons = ['User_Requested', 'Administrative', 'Space_Maintenance'];
-    if (!validReasons.includes(data.reason)) {
-      errors.push(`reason must be one of: ${validReasons.join(', ')}`);
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-};
+// --- Exports with Adapter ---
 
 module.exports = {
-  isValidEmail,
-  validatePassword,
-  isValidStudentNumber,
-  isValidPhoneNumber,
-  validateRegistration,
-  validateLogin,
-  validateProfileUpdate,
-  validatePasswordChange,
-  validateForgotPassword,
-  validateResetPassword,
-  validateBookingRequest,
-  validateBookingCancellation,
+  isValidEmail: (email) => !Joi.string().email().pattern(/@itu\.edu\.tr$/).validate(email).error,
+  isValidGenericEmail: (email) => !Joi.string().email().validate(email).error,
+  isValidStudentNumber: (sn) => !Joi.string().pattern(/^\d{6,12}$/).validate(sn).error,
+  isValidPhoneNumber: (pn) => !Joi.string().pattern(/^(\+?\d{1,3})?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})(?: *x(\d+))?$/).validate(pn).error,
+  validatePassword: (pw) => {
+    const { error } = Joi.string().min(8).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/).validate(pw);
+    return { valid: !error, message: error ? error.details[0].message : undefined };
+  },
+  
+  validateRegistration: (data) => validateWithJoi(registrationSchema, data),
+  validateLogin: (data) => validateWithJoi(loginSchema, data),
+  validateProfileUpdate: (data) => validateWithJoi(profileUpdateSchema, data),
+  validatePasswordChange: (data) => validateWithJoi(passwordChangeSchema, data),
+  validateForgotPassword: (data) => validateWithJoi(forgotPasswordSchema, data),
+  validateResetPassword: (data) => validateWithJoi(resetPasswordSchema, data),
+  validateBookingRequest: (data) => validateWithJoi(bookingRequestSchema, data),
+  validateBookingCancellation: (data) => validateWithJoi(bookingCancellationSchema, data)
 };
-

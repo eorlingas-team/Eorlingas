@@ -13,6 +13,7 @@ const formatBooking = (row) => {
     startTime: row.start_time,
     endTime: row.end_time,
     durationMinutes: row.duration_minutes,
+    attendeeCount: row.attendee_count,
     purpose: row.purpose,
     status: row.status,
     confirmationNumber: row.confirmation_number,
@@ -53,9 +54,13 @@ const findByUserId = async (userId, filters = {}) => {
     let paramIndex = 2;
 
     if (filters.type === 'upcoming') {
-      query += ` AND start_time > NOW() AND status = 'Confirmed'`;
+      // Upcoming: booking starts in future OR started less than 15 minutes ago
+      query += ` AND (start_time + INTERVAL '15 minutes') > NOW() AND status = 'Confirmed'`;
     } else if (filters.type === 'past') {
-      query += ` AND (start_time <= NOW() OR status IN ('Cancelled', 'Completed', 'No_Show'))`;
+      // Past: 15 minutes after start time has passed
+      query += ` AND (start_time + INTERVAL '15 minutes') <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
+    } else if (filters.type === 'cancelled') {
+      query += ` AND status = 'Cancelled'`;
     }
 
     if (filters.status) {
@@ -98,9 +103,13 @@ const countByUserId = async (userId, filters = {}) => {
     let paramIndex = 2;
 
     if (filters.type === 'upcoming') {
-      query += ` AND start_time > NOW() AND status = 'Confirmed'`;
+      // Upcoming: booking starts in future OR started less than 15 minutes ago
+      query += ` AND (start_time + INTERVAL '15 minutes') > NOW() AND status = 'Confirmed'`;
     } else if (filters.type === 'past') {
-      query += ` AND (start_time <= NOW() OR status IN ('Cancelled', 'Completed', 'No_Show'))`;
+      // Past: 15 minutes after start time has passed
+      query += ` AND (start_time + INTERVAL '15 minutes') <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
+    } else if (filters.type === 'cancelled') {
+      query += ` AND status = 'Cancelled'`;
     }
 
     if (filters.status) {
@@ -202,7 +211,7 @@ const countActiveBookings = async (userId) => {
       `SELECT COUNT(*) FROM bookings
        WHERE user_id = $1
          AND status = 'Confirmed'
-         AND start_time > NOW()`,
+         AND (start_time + INTERVAL '15 minutes') > NOW()`,
       [userId]
     );
     return parseInt(result.rows[0].count, 10);
@@ -232,16 +241,17 @@ const create = async (bookingData, transaction = null) => {
       startTime,
       endTime,
       confirmationNumber,
+      attendeeCount = 1,
       purpose = null,
     } = bookingData;
 
     const client = transaction || pool;
     const result = await client.query(
       `INSERT INTO bookings (
-        user_id, space_id, start_time, end_time, confirmation_number, purpose, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, 'Confirmed')
+        user_id, space_id, start_time, end_time, confirmation_number, attendee_count, purpose, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Confirmed')
       RETURNING *`,
-      [userId, spaceId, startTime, endTime, confirmationNumber, purpose]
+      [userId, spaceId, startTime, endTime, confirmationNumber, attendeeCount, purpose]
     );
 
     return formatBooking(result.rows[0]);
@@ -262,21 +272,24 @@ const create = async (bookingData, transaction = null) => {
 const updateStatus = async (bookingId, status, cancellationReason = null, transaction = null) => {
   try {
     const client = transaction || pool;
+    const params = [status];
     let query = `
       UPDATE bookings
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
+      SET status = $1
     `;
-    const params = [status, bookingId];
+    let paramIndex = 2;
 
     if (status === 'Cancelled') {
       query += `, cancelled_at = CURRENT_TIMESTAMP`;
       if (cancellationReason) {
-        query += `, cancellation_reason = $3`;
-        params.splice(1, 0, cancellationReason);
+        query += `, cancellation_reason = $${paramIndex}`;
+        params.push(cancellationReason);
+        paramIndex++;
       }
     }
 
-    query += ` WHERE booking_id = $${params.length} RETURNING *`;
+    query += ` WHERE booking_id = $${paramIndex} RETURNING *`;
+    params.push(bookingId);
 
     const result = await client.query(query, params);
     
@@ -324,7 +337,7 @@ const findByIdWithSpace = async (bookingId) => {
         s.amenities, s.accessibility_features,
         s.operating_hours_weekday_start, s.operating_hours_weekday_end,
         s.operating_hours_weekend_start, s.operating_hours_weekend_end,
-        bu.building_id, bu.building_name,
+        bu.building_id, bu.building_name, bu.latitude as building_latitude, bu.longitude as building_longitude,
         c.campus_id, c.campus_name
       FROM bookings b
       INNER JOIN study_spaces s ON b.space_id = s.space_id
@@ -365,6 +378,8 @@ const findByIdWithSpace = async (bookingId) => {
       building: {
         buildingId: row.building_id,
         buildingName: row.building_name,
+        latitude: row.building_latitude ? parseFloat(row.building_latitude) : null,
+        longitude: row.building_longitude ? parseFloat(row.building_longitude) : null,
         campus: {
           campusId: row.campus_id,
           campusName: row.campus_name,
@@ -375,6 +390,107 @@ const findByIdWithSpace = async (bookingId) => {
     return booking;
   } catch (error) {
     console.error('Error finding booking with space:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find bookings by user ID with space details (Optimized)
+ * @param {number} userId
+ * @param {Object} filters
+ * @returns {Array} Array of bookings with space details
+ */
+const findByUserIdWithSpace = async (userId, filters = {}) => {
+  try {
+    let query = `
+      SELECT 
+        b.*,
+        s.space_name, s.room_number, s.floor, s.capacity,
+        s.room_type, s.noise_level, s.description,
+        s.amenities, s.accessibility_features,
+        s.operating_hours_weekday_start, s.operating_hours_weekday_end,
+        s.operating_hours_weekend_start, s.operating_hours_weekend_end,
+        bu.building_id, bu.building_name, bu.latitude as building_latitude, bu.longitude as building_longitude,
+        c.campus_id, c.campus_name
+      FROM bookings b
+      INNER JOIN study_spaces s ON b.space_id = s.space_id
+      INNER JOIN buildings bu ON s.building_id = bu.building_id
+      INNER JOIN campuses c ON bu.campus_id = c.campus_id
+      WHERE b.user_id = $1
+    `;
+    const params = [userId];
+    let paramIndex = 2;
+
+    if (filters.type === 'upcoming') {
+      // Upcoming: booking starts in future OR started less than 15 minutes ago
+      query += ` AND (b.start_time + INTERVAL '15 minutes') > NOW() AND b.status = 'Confirmed'`;
+    } else if (filters.type === 'past') {
+      // Past: 15 minutes after start time has passed
+      query += ` AND (b.start_time + INTERVAL '15 minutes') <= NOW() AND b.status IN ('Confirmed', 'Completed', 'No_Show')`;
+    } else if (filters.type === 'cancelled') {
+      query += ` AND b.status = 'Cancelled'`;
+    }
+
+    if (filters.status) {
+      query += ` AND b.status = $${paramIndex}`;
+      params.push(filters.status);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY b.start_time DESC';
+
+    if (filters.limit) {
+      query += ` LIMIT $${paramIndex}`;
+      params.push(filters.limit);
+      paramIndex++;
+    }
+
+    if (filters.offset) {
+      query += ` OFFSET $${paramIndex}`;
+      params.push(filters.offset);
+    }
+
+    const result = await pool.query(query, params);
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.space = {
+        spaceId: row.space_id,
+        spaceName: row.space_name,
+        roomNumber: row.room_number,
+        floor: row.floor,
+        capacity: row.capacity,
+        roomType: row.room_type,
+        noiseLevel: row.noise_level,
+        description: row.description,
+        amenities: row.amenities || [],
+        accessibilityFeatures: row.accessibility_features || [],
+        operatingHours: {
+          weekday: {
+            start: row.operating_hours_weekday_start?.slice(0, 5),
+            end: row.operating_hours_weekday_end?.slice(0, 5),
+          },
+          weekend: {
+            start: row.operating_hours_weekend_start?.slice(0, 5),
+            end: row.operating_hours_weekend_end?.slice(0, 5),
+          },
+        },
+        building: {
+          buildingId: row.building_id,
+          buildingName: row.building_name,
+          latitude: row.building_latitude ? parseFloat(row.building_latitude) : null,
+          longitude: row.building_longitude ? parseFloat(row.building_longitude) : null,
+          campus: {
+            campusId: row.campus_id,
+            campusName: row.campus_name,
+          },
+        },
+      };
+      return booking;
+    });
+
+  } catch (error) {
+    console.error('Error finding bookings by user ID with space:', error);
     throw error;
   }
 };
@@ -390,4 +506,5 @@ module.exports = {
   updateStatus,
   confirmationNumberExists,
   findByIdWithSpace,
+  findByUserIdWithSpace,
 };

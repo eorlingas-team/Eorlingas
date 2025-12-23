@@ -1,5 +1,9 @@
 const pool = require('../config/db');
 const recommendationService = require('../services/recommendationService');
+const logAuditEvent = require('../utils/auditLogger');
+const { toIstanbulDate, getIstanbulHourMinute, getIstanbulNow } = require('../utils/dateHelpers');
+const { addDays } = require('date-fns');
+const { formatInTimeZone } = require('date-fns-tz');
 
 //  DB snake_case verisi -> API camelCase 
 const formatSpace = (row) => {
@@ -19,12 +23,12 @@ const formatSpace = (row) => {
     // SQL sütunları API'nin istediği obje
     operatingHours: {
       weekday: {
-        start: row.operating_hours_weekday_start?.slice(0, 5), // "08:00:00" -> "08:00"
-        end: row.operating_hours_weekday_end?.slice(0, 5)
+        start: (row.operating_hours_weekday_start || row.building_weekday_start)?.slice(0, 5), 
+        end: (row.operating_hours_weekday_end || row.building_weekday_end)?.slice(0, 5)
       },
       weekend: {
-        start: row.operating_hours_weekend_start?.slice(0, 5),
-        end: row.operating_hours_weekend_end?.slice(0, 5)
+        start: (row.operating_hours_weekend_start || row.building_weekend_start)?.slice(0, 5),
+        end: (row.operating_hours_weekend_end || row.building_weekend_end)?.slice(0, 5)
       }
     },
     
@@ -35,6 +39,8 @@ const formatSpace = (row) => {
     building: {
       buildingId: row.building_id,
       buildingName: row.building_name,
+      latitude: row.building_latitude ? parseFloat(row.building_latitude) : null,
+      longitude: row.building_longitude ? parseFloat(row.building_longitude) : null,
       campus: { 
         campusId: row.campus_id,
         campusName: row.campus_name 
@@ -42,7 +48,9 @@ const formatSpace = (row) => {
     },
     
     currentAvailability: row.status === 'Available' ? 'Available' : row.status, 
-    nextAvailableTime: null 
+    nextAvailableTime: null,
+    maintenanceStartDate: row.maintenance_start_date,
+    maintenanceEndDate: row.maintenance_end_date
   };
 };
 
@@ -52,68 +60,148 @@ exports.getAllSpaces = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
-    const { campus, building, type, capacity, available, noiseLevel } = req.query;
-    const userId = req.user?.id || req.query.userId; 
+    const { campus, building, type, capacity, available, noiseLevel, status } = req.query;
+    const userId = req.user?.userId || req.query.userId; 
 
-    let query = `
-      SELECT s.*, b.building_name, b.campus_id, c.campus_name
-      FROM study_spaces s
-      JOIN buildings b ON s.building_id = b.building_id
-      JOIN campuses c ON b.campus_id = c.campus_id
-      WHERE s.status != 'Deleted'
-    `;
-    
+    // 1. Build Dynamic WHERE Clause
+    let whereConditions = [];
     const params = [];
     let paramIndex = 1;
 
-    if (campus) {
-      query += ` AND c.campus_name ILIKE $${paramIndex}`;
+    // Specific Status Filter
+    if (status && status !== 'All') {
+      whereConditions.push(`s.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    } else {
+      whereConditions.push(`s.status != 'Deleted'`);
+    }
+
+    if (campus && campus !== 'All') {
+      whereConditions.push(`c.campus_name ILIKE $${paramIndex}`);
       params.push(`%${campus}%`);
       paramIndex++;
     }
 
-    if (building) {
-      query += ` AND b.building_name ILIKE $${paramIndex}`;
+    if (building && building !== 'All') {
+      whereConditions.push(`b.building_name ILIKE $${paramIndex}`);
       params.push(`%${building}%`);
       paramIndex++;
     }
 
-    if (type) {
-      query += ` AND s.room_type = $${paramIndex}`;
-      params.push(type);
+    if (type && type !== 'All') {
+      const formattedType = type.replace(/ /g, '_');
+      whereConditions.push(`s.room_type = $${paramIndex}`);
+      params.push(formattedType);
       paramIndex++;
     }
 
-    if (capacity) {
-      query += ` AND s.capacity >= $${paramIndex}`;
+    if (req.query.minCapacity !== undefined && req.query.minCapacity !== 'All' && req.query.minCapacity !== '') {
+      whereConditions.push(`s.capacity >= $${paramIndex}`);
+      params.push(req.query.minCapacity);
+      paramIndex++;
+    }
+
+    if (req.query.maxCapacity !== undefined && req.query.maxCapacity !== 'All') {
+      whereConditions.push(`s.capacity <= $${paramIndex}`);
+      params.push(req.query.maxCapacity);
+      paramIndex++;
+    }
+
+    if (capacity && req.query.minCapacity === undefined && capacity !== 'All') {
+      whereConditions.push(`s.capacity >= $${paramIndex}`);
       params.push(capacity);
       paramIndex++;
     }
 
-    if (noiseLevel) {
-      query += ` AND s.noise_level = $${paramIndex}`;
+    if (noiseLevel && noiseLevel !== 'All') {
+      whereConditions.push(`s.noise_level = $${paramIndex}`);
       params.push(noiseLevel);
       paramIndex++;
     }
 
     if (available === 'true') {
-      query += ` AND s.status = 'Available'`;
+      if (!status) {
+         whereConditions.push(`s.status = 'Available'`);
+      }
     }
 
-    const result = await pool.query(query, params);
-    let spaces = result.rows;
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-    spaces = await recommendationService.scoreAndSortSpaces(spaces, userId || null);
+    if (userId) {
+      const query = `
+        SELECT s.*, b.building_name, b.campus_id, c.campus_name,
+               b.latitude as building_latitude, b.longitude as building_longitude,
+               b.operating_hours_weekday_start as building_weekday_start,
+               b.operating_hours_weekday_end as building_weekday_end,
+               b.operating_hours_weekend_start as building_weekend_start,
+               b.operating_hours_weekend_end as building_weekend_end
+        FROM study_spaces s
+        JOIN buildings b ON s.building_id = b.building_id
+        JOIN campuses c ON b.campus_id = c.campus_id
+        ${whereClause}
+      `;
+      const result = await pool.query(query, params);
+      let spaces = result.rows;
 
-    const totalCount = spaces.length;
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedSpaces = spaces.slice(startIndex, endIndex);
+      spaces = await recommendationService.scoreAndSortSpaces(spaces, userId);
+
+      const totalCount = spaces.length;
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedSpaces = spaces.slice(startIndex, endIndex);
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          spaces: paginatedSpaces.map(formatSpace),
+          pagination: {
+            page, limit,
+            total: totalCount,
+            totalPages: Math.ceil(totalCount / limit)
+          }
+        }
+      });
+    }
+
+    const countQuery = `
+      SELECT COUNT(*)
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      ${whereClause}
+    `;
+    const countResult = await pool.query(countQuery, params);
+    const totalCount = parseInt(countResult.rows[0].count);
+
+    const offset = (page - 1) * limit;
+    
+    const limitParamIndex = paramIndex;
+    const offsetParamIndex = paramIndex + 1;
+    const dataParams = [...params, limit, offset];
+
+    const dataQuery = `
+      SELECT s.*, b.building_name, b.campus_id, c.campus_name,
+             b.latitude as building_latitude, b.longitude as building_longitude,
+             b.operating_hours_weekday_start as building_weekday_start,
+             b.operating_hours_weekday_end as building_weekday_end,
+             b.operating_hours_weekend_start as building_weekend_start,
+             b.operating_hours_weekend_end as building_weekend_end,
+             (SELECT COUNT(*) FROM bookings bk WHERE bk.space_id = s.space_id) as popularity_score
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      JOIN campuses c ON b.campus_id = c.campus_id
+      ${whereClause}
+      ORDER BY popularity_score DESC
+      LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+    `;
+
+    const result = await pool.query(dataQuery, dataParams);
 
     res.status(200).json({
       success: true,
       data: {
-        spaces: paginatedSpaces.map(formatSpace),
+        spaces: result.rows.map(formatSpace),
         pagination: {
           page, limit,
           total: totalCount,
@@ -121,8 +209,37 @@ exports.getAllSpaces = async (req, res) => {
         }
       }
     });
+
   } catch (err) {
     console.error(err);
+    res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
+  }
+};
+
+exports.getStats = async (req, res) => {
+  try {
+    const query = `
+      SELECT
+        COUNT(*) as total_spaces,
+        COUNT(CASE WHEN status = 'Available' THEN 1 END) as available,
+        COUNT(CASE WHEN status = 'Maintenance' THEN 1 END) as maintenance,
+        COUNT(CASE WHEN status = 'Deleted' THEN 1 END) as deleted
+      FROM study_spaces
+    `;
+    const result = await pool.query(query);
+    const row = result.rows[0];
+    
+    res.status(200).json({
+        success: true,
+        data: {
+          totalSpaces: parseInt(row.total_spaces),
+          available: parseInt(row.available),
+          maintenance: parseInt(row.maintenance),
+          deleted: parseInt(row.deleted)
+        }
+    });
+  } catch (err) {
+    console.error('Get Stats Error:', err);
     res.status(500).json({ success: false, error: { code: "SERVER_ERROR", message: err.message } });
   }
 };
@@ -130,7 +247,7 @@ exports.getAllSpaces = async (req, res) => {
 exports.searchSpaces = async (req, res) => {
   try {
     const { q, page = 1, limit = 20 } = req.query;
-    const userId = req.user?.id || req.query.userId; 
+    const userId = req.user?.userId || req.query.userId; 
 
     if (!q) {
       return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Search query 'q' is required" } });
@@ -139,7 +256,12 @@ exports.searchSpaces = async (req, res) => {
     const keyword = `%${q}%`;
     
     const query = `
-      SELECT s.*, b.building_name, b.campus_id, c.campus_name
+      SELECT s.*, b.building_name, b.campus_id, c.campus_name,
+             b.latitude as building_latitude, b.longitude as building_longitude,
+             b.operating_hours_weekday_start as building_weekday_start,
+             b.operating_hours_weekday_end as building_weekday_end,
+             b.operating_hours_weekend_start as building_weekend_start,
+             b.operating_hours_weekend_end as building_weekend_end
       FROM study_spaces s
       JOIN buildings b ON s.building_id = b.building_id
       JOIN campuses c ON b.campus_id = c.campus_id
@@ -194,52 +316,88 @@ const getDatesInRange = (startDate, endDate) => {
 };
 
 const generateDailySlots = (dateObj, space, bookings) => {
-  const dateStr = dateObj.toISOString().split('T')[0];
+  const dateStr = toIstanbulDate(dateObj);
   const dayOfWeek = dateObj.getDay(); // 0: Pazar, 6: Cumartesi
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   let startStr, endStr;
 
   if (isWeekend) {
-    startStr = space.operating_hours_weekend_start;
-    endStr = space.operating_hours_weekend_end;
+    startStr = space.operating_hours_weekend_start || space.building_weekend_start;
+    endStr = space.operating_hours_weekend_end || space.building_weekend_end;
   } else {
-    startStr = space.operating_hours_weekday_start;
-    endStr = space.operating_hours_weekday_end;
+    startStr = space.operating_hours_weekday_start || space.building_weekday_start;
+    endStr = space.operating_hours_weekday_end || space.building_weekday_end;
   }
 
-  if (!startStr || !endStr) return { date: dateStr, slots: [] };
+  // If still no operating hours, the space is closed on this day
+  if (!startStr || !endStr) return { date: dateStr, slots: [], closed: true };
+
+  // Check if space is in maintenance on this date
+  let isInMaintenance = false;
+  
+  if (space.status === 'Maintenance' && space.maintenance_start_date && space.maintenance_end_date) {
+    const mStartStr = toIstanbulDate(space.maintenance_start_date);
+    const mEndStr = toIstanbulDate(space.maintenance_end_date);
+    
+    // Compare YYYY-MM-DD strings
+    if (dateStr >= mStartStr && dateStr <= mEndStr) {
+      isInMaintenance = true;
+    }
+  }
 
   const slots = [];
-  let currentHour = parseInt(startStr.split(':')[0]);
-  const endHour = parseInt(endStr.split(':')[0]);
+  
+  // Parse start/end times into total minutes from midnight
+  const [startH, startM] = startStr.split(':').map(Number);
+  const [endH, endM] = endStr.split(':').map(Number);
+  
+  let currentMin = startH * 60 + (startM || 0);
+  const endMin = endH * 60 + (endM || 0);
 
-  while (currentHour < endHour) {
-    const slotStart = `${currentHour.toString().padStart(2, '0')}:00`;
-    const slotEnd = `${(currentHour + 1).toString().padStart(2, '0')}:00`;
+  while (currentMin + 15 <= endMin) {
+    const slotStartTotal = currentMin;
+    const slotEndTotal = currentMin + 15;
+
+    const hour = Math.floor(slotStartTotal / 60);
+    const min = slotStartTotal % 60;
+    const nextHour = Math.floor(slotEndTotal / 60);
+    const nextMin = slotEndTotal % 60;
+
+    const slotStartStr = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+    const slotEndStr = `${nextHour.toString().padStart(2, '0')}:${nextMin.toString().padStart(2, '0')}`;
     
-    const isBooked = bookings.some(b => {
-      const bStart = new Date(b.start_time);
-      const bEnd = new Date(b.end_time);
-      
-      if (bStart.toISOString().split('T')[0] !== dateStr) return false;
+    // If in maintenance, mark all slots as booked
+    let isBooked = isInMaintenance;
+    
+    // Otherwise, check regular bookings
+    if (!isBooked) {
+      isBooked = bookings.some(b => {
+        const bStart = new Date(b.start_time);
+        const bEnd = new Date(b.end_time);
+        
+        if (toIstanbulDate(bStart) !== dateStr) return false;
 
-      const bStartHour = bStart.getUTCHours() + 3; // TR saati (UTC+3) fix - TODO: Timezone yönetimi
-      const bEndHour = bEnd.getUTCHours() + 3;
+        const { hour: trStartHour, minute: trStartMinute } = getIstanbulHourMinute(bStart);
+        const { hour: trEndHour, minute: trEndMinute } = getIstanbulHourMinute(bEnd);
 
-      return (bStartHour < currentHour + 1) && (bEndHour > currentHour);
-    });
+        const bStartTotal = trStartHour * 60 + trStartMinute; 
+        const bEndTotal = trEndHour * 60 + trEndMinute;
+
+        return (bStartTotal < slotEndTotal) && (bEndTotal > slotStartTotal);
+      });
+    }
 
     slots.push({
-      start: slotStart,
-      end: slotEnd,
+      start: slotStartStr,
+      end: slotEndStr,
       available: !isBooked
     });
 
-    currentHour++;
+    currentMin += 15;
   }
 
-  return { date: dateStr, slots };
+  return { date: dateStr, slots, closed: slots.length === 0 };
 };
 
 
@@ -248,23 +406,19 @@ exports.getSpaceById = async (req, res) => {
   const { id } = req.params;
   try {
     const query = `
-      SELECT s.*, b.building_name, b.campus_id, c.campus_name
+      SELECT s.*, 
+             b.building_name, b.campus_id,
+             b.latitude as building_latitude, b.longitude as building_longitude,
+             b.operating_hours_weekday_start as building_weekday_start,
+             b.operating_hours_weekday_end as building_weekday_end,
+             b.operating_hours_weekend_start as building_weekend_start,
+             b.operating_hours_weekend_end as building_weekend_end,
+             c.campus_name
       FROM study_spaces s
       JOIN buildings b ON s.building_id = b.building_id
       JOIN campuses c ON b.campus_id = c.campus_id
       WHERE s.space_id = $1
     `;
-    const result = await pool.query(query, [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
-    }
-
-    const spaceData = formatSpace(result.rows[0]);
-
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
     const bookingsQuery = `
       SELECT start_time, end_time 
@@ -274,14 +428,28 @@ exports.getSpaceById = async (req, res) => {
       AND start_time >= CURRENT_DATE
       AND end_time < CURRENT_DATE + INTERVAL '2 days'
     `;
-    const bookingsResult = await pool.query(bookingsQuery, [id]);
+
+    const [spaceResult, bookingsResult] = await Promise.all([
+      pool.query(query, [id]),
+      pool.query(bookingsQuery, [id])
+    ]);
+    
+    if (spaceResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
+    }
+
+    const spaceRow = spaceResult.rows[0];
+    const spaceData = formatSpace(spaceRow);
+
+    const today = getIstanbulNow();
+    const tomorrow = addDays(today, 1);
 
     const availabilityData = [
-      generateDailySlots(today, result.rows[0], bookingsResult.rows),
-      generateDailySlots(tomorrow, result.rows[0], bookingsResult.rows)
+      generateDailySlots(today, spaceRow, bookingsResult.rows),
+      generateDailySlots(tomorrow, spaceRow, bookingsResult.rows)
     ];
 
-    const currentStatus = result.rows[0].status === 'Available' ? 'Available' : 'Unavailable';
+    const currentStatus = spaceRow.status === 'Available' ? 'Available' : 'Unavailable';
     
     res.status(200).json({ 
       success: true, 
@@ -309,7 +477,18 @@ exports.getSpaceAvailability = async (req, res) => {
   }
 
   try {
-    const spaceCheck = await pool.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
+    const query = `
+      SELECT s.*,
+             b.operating_hours_weekday_start as building_weekday_start,
+             b.operating_hours_weekday_end as building_weekday_end,
+             b.operating_hours_weekend_start as building_weekend_start,
+             b.operating_hours_weekend_end as building_weekend_end
+      FROM study_spaces s
+      JOIN buildings b ON s.building_id = b.building_id
+      WHERE s.space_id = $1
+    `;
+    const spaceCheck = await pool.query(query, [id]);
+    
     if (spaceCheck.rows.length === 0) {
        return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space not found" } });
     }
@@ -341,6 +520,7 @@ exports.getSpaceAvailability = async (req, res) => {
   }
 };
 
+
 // 3. MEKAN OLUŞTURMA 
 exports.createSpace = async (req, res) => {
   const body = req.body;
@@ -351,32 +531,65 @@ exports.createSpace = async (req, res) => {
     const weekendStart = body.operatingHours?.weekend?.start || null;
     const weekendEnd = body.operatingHours?.weekend?.end || null;
 
+    // 0. Validations
+    if (body.capacity < 1 || body.capacity > 100) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Capacity must be between 1 and 100." } });
+    }
+
+    // 1. Unique Room in Building Check
+    const uniqueCheck = await pool.query(
+      'SELECT 1 FROM study_spaces WHERE building_id = $1 AND room_number = $2 AND status != \'Deleted\'',
+      [body.buildingId, body.roomNumber]
+    );
+    if (uniqueCheck.rows.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: "DUPLICATE_ROOM", 
+          message: `Room number '${body.roomNumber}' already exists in the selected building. Please enter a different room number.` 
+        } 
+      });
+    }
+
     const query = `
       INSERT INTO study_spaces (
         building_id, space_name, room_number, floor, capacity, 
         room_type, noise_level, description, amenities, 
         accessibility_features, status,
         operating_hours_weekday_start, operating_hours_weekday_end,
-        operating_hours_weekend_start, operating_hours_weekend_end
+        operating_hours_weekend_start, operating_hours_weekend_end,
+        created_by
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Available', $11, $12, $13, $14) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Available', $11, $12, $13, $14, $15) 
       RETURNING *`;
     
     const values = [
-      1, // Building ID (Sabit)
+      body.buildingId, 
       body.spaceName, 
       body.roomNumber || 'Z-00', 
       body.floor || 0, 
       body.capacity, 
       body.roomType, 
-      body.noiseLevel || 'Quiet',
+      body.noise_level || body.noiseLevel || 'Quiet',
       body.description, 
       JSON.stringify(body.amenities || []),
       JSON.stringify(body.accessibilityFeatures || []),
-      weekdayStart, weekdayEnd, weekendStart, weekendEnd
+      weekdayStart, weekdayEnd, weekendStart, weekendEnd,
+      req.user?.userId || null
     ];
 
     const newSpace = await pool.query(query, values);
+
+    // Audit Log: Space_Created
+    await logAuditEvent({
+      userId: req.user?.userId || null,
+      actionType: 'Space_Created',
+      targetEntityType: 'Space',
+      targetEntityId: newSpace.rows[0].space_id,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: formatSpace(newSpace.rows[0])
+    });
 
     res.status(201).json({
       success: true,
@@ -396,10 +609,58 @@ exports.updateSpace = async (req, res) => {
   const body = req.body;
 
   try {
-    const weekdayStart = body.operatingHours?.weekday?.start || '08:00';
-    const weekdayEnd = body.operatingHours?.weekday?.end || '22:00';
-    const weekendStart = body.operatingHours?.weekend?.start || null;
-    const weekendEnd = body.operatingHours?.weekend?.end || null;
+    const currentResult = await pool.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be updated not found." } });
+    }
+    const current = currentResult.rows[0];
+
+    const weekdayStart = body.operatingHours?.weekday?.start || body.operating_hours_weekday_start || current.operating_hours_weekday_start;
+    const weekdayEnd = body.operatingHours?.weekday?.end || body.operating_hours_weekday_end || current.operating_hours_weekday_end;
+    const weekendStart = body.operatingHours?.weekend?.start !== undefined ? body.operatingHours.weekend.start : (body.operating_hours_weekend_start || current.operating_hours_weekend_start);
+    const weekendEnd = body.operatingHours?.weekend?.end !== undefined ? body.operatingHours.weekend.end : (body.operating_hours_weekend_end || current.operating_hours_weekend_end);
+
+    // 0. Validation: Capacity
+    const finalCapacity = body.capacity !== undefined ? body.capacity : current.capacity;
+    if (finalCapacity < 1 || finalCapacity > 100) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Capacity must be between 1 and 100." } });
+    }
+
+    // 1. Validation: Unique Room in Building (if changed)
+    const finalBuildingId = body.buildingId !== undefined ? body.buildingId : current.building_id;
+    const finalRoomNumber = body.roomNumber !== undefined ? body.roomNumber : current.room_number;
+    
+    if (finalBuildingId !== current.building_id || finalRoomNumber !== current.room_number) {
+      const uniqueCheck = await pool.query(
+        'SELECT 1 FROM study_spaces WHERE building_id = $1 AND room_number = $2 AND space_id != $3 AND status != \'Deleted\'',
+        [finalBuildingId, finalRoomNumber, id]
+      );
+      if (uniqueCheck.rows.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: { 
+            code: "DUPLICATE_ROOM", 
+            message: `Room number '${finalRoomNumber}' already exists in the selected building. Please enter a different room number.` 
+          } 
+        });
+      }
+    }
+
+    // 2. Validation: Maintenance Dates
+    const finalStatus = body.status !== undefined ? body.status : current.status;
+    if (finalStatus === 'Maintenance') {
+      const mStart = body.maintenanceStartDate || current.maintenance_start_date;
+      const mEnd = body.maintenanceEndDate || current.maintenance_end_date;
+      if (!mStart || !mEnd || new Date(mEnd) <= new Date(mStart)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: { 
+            code: "MAINTENANCE_DATE_ERROR", 
+            message: "Valid start and end dates must be provided for maintenance status. The end date must be after the start date." 
+          } 
+        });
+      }
+    }
 
     const query = `
       UPDATE study_spaces 
@@ -417,34 +678,54 @@ exports.updateSpace = async (req, res) => {
         operating_hours_weekday_end = $11,
         operating_hours_weekend_start = $12,
         operating_hours_weekend_end = $13,
+        status = $14,
+        building_id = $15,
+        maintenance_start_date = $16,
+        maintenance_end_date = $17,
         updated_at = CURRENT_TIMESTAMP
-      WHERE space_id = $14
+      WHERE space_id = $18
       RETURNING *
     `;
 
     const values = [
-      body.spaceName, 
-      body.roomNumber, 
-      body.floor, 
-      body.capacity, 
-      body.roomType, 
-      body.noiseLevel, 
-      body.description, 
-      JSON.stringify(body.amenities || []),
-      JSON.stringify(body.accessibilityFeatures || []),
+      body.spaceName !== undefined ? body.spaceName : current.space_name, 
+      body.roomNumber !== undefined ? body.roomNumber : current.room_number,
+      body.floor !== undefined ? body.floor : current.floor, 
+      body.capacity !== undefined ? body.capacity : current.capacity, 
+      body.roomType !== undefined ? body.roomType : current.room_type, 
+      body.noiseLevel !== undefined ? body.noiseLevel : current.noise_level, 
+      body.description !== undefined ? body.description : current.description, 
+      body.amenities !== undefined ? JSON.stringify(body.amenities) : current.amenities,
+      body.accessibilityFeatures !== undefined ? JSON.stringify(body.accessibilityFeatures) : current.accessibility_features,
       weekdayStart, weekdayEnd, weekendStart, weekendEnd,
+      body.status !== undefined ? body.status : current.status,
+      body.buildingId !== undefined ? body.buildingId : current.building_id,
+      body.maintenanceStartDate !== undefined ? body.maintenanceStartDate : current.maintenance_start_date,
+      body.maintenanceEndDate !== undefined ? body.maintenanceEndDate : current.maintenance_end_date,
       id
     ];
 
     const result = await pool.query(query, values);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Güncellenecek mekan bulunamadı." } });
+      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be updated not found." } });
     }
+
+    // Audit Log: Space_Updated
+    await logAuditEvent({
+      userId: req.user?.userId || null,
+      actionType: 'Space_Updated',
+      targetEntityType: 'Space',
+      targetEntityId: result.rows[0].space_id,
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      beforeState: formatSpace(current),
+      afterState: formatSpace(result.rows[0])
+    });
 
     res.status(200).json({
       success: true,
-      message: "Mekan başarıyla güncellendi",
+      message: "Space updated successfully",
       data: formatSpace(result.rows[0])
     });
 
@@ -468,12 +749,23 @@ exports.deleteSpace = async (req, res) => {
     const result = await pool.query(query, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Silinecek mekan bulunamadı." } });
+      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be deleted not found." } });
     }
+
+    // Audit Log: Space_Deleted
+    await logAuditEvent({
+      userId: req.user?.userId || null,
+      actionType: 'Space_Deleted',
+      targetEntityType: 'Space',
+      targetEntityId: result.rows[0].space_id, // Assuming RETURNING space_id
+      ipAddress: req.ip || req.connection.remoteAddress,
+      result: 'Success',
+      afterState: { status: 'Deleted', deletedAt: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX") }
+    });
 
     res.status(200).json({
       success: true,
-      message: "Mekan başarıyla silindi (Soft Delete)",
+      message: "Space deleted successfully (Soft Delete)",
       data: result.rows[0]
     });
   } catch (err) {

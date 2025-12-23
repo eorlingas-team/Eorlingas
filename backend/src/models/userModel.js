@@ -1,4 +1,14 @@
 const pool = require('../config/db');
+const crypto = require('crypto');
+
+/**
+ * Hash token using SHA-256
+ * @param {string} token 
+ * @returns {string} Hashed token
+ */
+const hashToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex');
+};
 
 /**
  * Find user by email
@@ -171,9 +181,10 @@ const updateLastLogin = async (userId) => {
  */
 const findByVerificationToken = async (token) => {
   try {
+    const hashedToken = hashToken(token);
     const result = await pool.query(
       'SELECT * FROM users WHERE verification_token = $1',
-      [token]
+      [hashedToken]
     );
     return result.rows[0] || null;
   } catch (error) {
@@ -191,9 +202,10 @@ const findByVerificationToken = async (token) => {
  */
 const setVerificationToken = async (userId, token, code, expiryDate) => {
   try {
+    const hashedToken = hashToken(token);
     await pool.query(
       'UPDATE users SET verification_token = $1, verification_code = $2, verification_token_expiry = $3 WHERE user_id = $4',
-      [token, code, expiryDate, userId]
+      [hashedToken, code, expiryDate, userId]
     );
   } catch (error) {
     console.error('Error setting verification token:', error);
@@ -266,9 +278,10 @@ const getRecentFailedLoginAttempts = async (userId) => {
  */
 const findByPasswordResetToken = async (token) => {
   try {
+    const hashedToken = hashToken(token);
     const result = await pool.query(
       'SELECT * FROM users WHERE password_reset_token = $1',
-      [token]
+      [hashedToken]
     );
     return result.rows[0] || null;
   } catch (error) {
@@ -285,9 +298,10 @@ const findByPasswordResetToken = async (token) => {
  */
 const setPasswordResetToken = async (userId, token, expiryDate) => {
   try {
+    const hashedToken = hashToken(token);
     await pool.query(
       'UPDATE users SET password_reset_token = $1, password_reset_token_expiry = $2 WHERE user_id = $3',
-      [token, expiryDate, userId]
+      [hashedToken, expiryDate, userId]
     );
   } catch (error) {
     console.error('Error setting password reset token:', error);
