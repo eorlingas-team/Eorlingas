@@ -1,0 +1,418 @@
+/* LocationMap Component Styles */
+
+/* === Map Card Container === */
+.mapCard {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.mapHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.mapHeader .material-symbols-outlined {
+  color: var(--primary-color);
+  font-size: 1.25rem;
+}
+
+.headerTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* === Map Preview (Interactive) === */
+.mapPreviewInteractive {
+  position: relative;
+  height: 220px;
+  overflow: hidden;
+}
+
+.leafletContainer {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* === Location Info with Action === */
+.locationInfoWithAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  gap: 12px;
+}
+
+.googleMapsBtnSmall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background-color: var(--primary-color);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.googleMapsBtnSmall:hover {
+  background-color: var(--primary-hover);
+  transform: scale(1.05);
+}
+
+.googleMapsBtnSmall :global(.material-symbols-outlined) {
+  font-size: 14px !important;
+  color: white !important;
+}
+
+/* === Expand Button Overlay === */
+.expandBtnOverlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.expandBtnOverlay:hover {
+  background-color: var(--bg-tertiary);
+  transform: scale(1.05);
+}
+
+.expandBtnOverlay .material-symbols-outlined {
+  font-size: 0.5rem;
+}
+
+/* === Location Info === */
+.locationInfo {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.buildingInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.buildingName {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.roomInfo {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.campusName {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* === Action Buttons === */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.expandBtn,
+.directionsBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.expandBtn {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-main);
+  color: var(--text-main);
+}
+
+.expandBtn:hover {
+  background-color: var(--border-main);
+}
+
+.directionsBtn {
+  background-color: var(--primary-color);
+  border: none;
+  color: white;
+}
+
+.directionsBtn:hover {
+  background-color: var(--primary-hover);
+}
+
+.expandBtn .material-symbols-outlined,
+.directionsBtn .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* === No Coordinates Fallback === */
+.noCoordinates {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background-color: var(--bg-tertiary);
+  text-align: center;
+  min-height: 200px;
+}
+
+.noCoordinates .material-symbols-outlined {
+  font-size: 3rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.noCoordinates p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.locationText {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* === Popover Modal === */
+.popoverBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.popover {
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  background-color: var(--bg-card);
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s ease;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* === Popover Header === */
+.popoverHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.popoverTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.popoverTitle .material-symbols-outlined {
+  color: var(--primary-color);
+  font-size: 1.375rem;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.closeBtn:hover {
+  background-color: var(--border-main);
+  color: var(--text-main);
+}
+
+/* === Popover Map === */
+.popoverMap {
+  flex: 1;
+  min-height: 400px;
+  max-height: 60vh;
+}
+
+.popoverLeaflet {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* === Popover Footer === */
+.popoverFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-main);
+  background-color: var(--bg-secondary);
+}
+
+.popoverLocationInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popoverBuildingName {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.popoverRoomInfo {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.popoverCampusName {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.googleMapsBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background-color: var(--primary-color);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.googleMapsBtn:hover {
+  background-color: var(--primary-hover);
+}
+
+.googleMapsBtn .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* === Responsive === */
+@media (max-width: 640px) {
+  .popoverBackdrop {
+    padding: 0;
+  }
+  
+  .popover {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+  
+  .popoverFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .googleMapsBtn {
+    justify-content: center;
+  }
+  
+  .actionButtons {
+    flex-direction: column;
+  }
+}
+
+/* === Leaflet Overrides for Theme === */
+.leafletContainer .leaflet-popup-content-wrapper {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+
+.leafletContainer .leaflet-popup-tip {
+  background-color: var(--bg-card);
+}
+
+.popoverLeaflet .leaflet-popup-content-wrapper {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+
+.popoverLeaflet .leaflet-popup-tip {
+  background-color: var(--bg-card);
+}

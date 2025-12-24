@@ -1,0 +1,210 @@
+/* frontend/src/pages/MyBookingsPage.css */
+
+
+.bookings-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* --- Main Layout --- */
+.bookings-main {
+  flex: 1;
+  padding: 40px 24px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.content-wrapper {
+  width: 100%;
+  max-width: 80rem; /* max-w-7xl */
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.page-title {
+  font-size: 2.25rem;
+  font-weight: 900;
+  margin: 0;
+  padding: 0 16px;
+  letter-spacing: -0.033em;
+  color: var(--text-main);
+}
+
+/* --- Tabs & List --- */
+.bookings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 16px;
+}
+
+.tabs-row {
+  display: flex;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-btn:hover { color: var(--text-main); border-bottom-color: var(--border-main); }
+
+.tab-btn.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.bookings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Booking Card */
+.booking-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 12px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .booking-card { flex-direction: row; }
+}
+
+.card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.space-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.space-location {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 4px 0 0 0;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: var(--success-bg);
+  color: var(--success-text);
+}
+
+/* Info Grid inside card */
+.card-info-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  font-size: 0.875rem;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.info-icon {
+  font-size: 1rem;
+}
+
+/* Card Actions */
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-main);
+}
+
+@media (min-width: 640px) {
+  .card-actions {
+    flex-direction: column;
+    align-items: flex-end;
+    border-top: none;
+    border-left: 1px solid var(--border-main);
+    padding-top: 0;
+    padding-left: 24px;
+    width: 180px;
+    flex-shrink: 0;
+  }
+}
+
+.btn-cancel-booking {
+  width: 100%;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background-color: #ef4444; /* Keep red for danger actions */
+  color: white;
+  transition: opacity 0.2s;
+}
+
+.btn-cancel-booking:hover { opacity: 0.9; }
+
+.btn-view-details {
+  width: 100%;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background-color: var(--bg-tertiary);
+  color: var(--text-main);
+  transition: background-color 0.2s;
+}
+
+.btn-view-details:hover {
+  background-color: var(--border-main);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 1024px) {
+  /* Header responsive styles handled in Header.css */
+}
+
+@media (max-width: 640px) {
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+}

@@ -1,0 +1,440 @@
+/* frontend/src/pages/SpaceDetailsPage.css */
+
+
+.details-page-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* --- Main Layout --- */
+.details-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 32px 24px;
+  width: 100%;
+}
+
+.content-wrapper {
+  width: 100%;
+  max-width: 80rem;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 1024px) {
+  .details-grid {
+    grid-template-columns: 2fr 1fr;
+    gap: 48px;
+  }
+}
+
+/* --- Left Column: Space Info --- */
+.space-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+
+.title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.space-title {
+  font-size: 2.25rem;
+  font-weight: 900;
+  margin: 0;
+  letter-spacing: -0.033em;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.space-location {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-main);
+  background-color: transparent;
+  transition: border-color 0.3s ease;
+}
+
+@media (min-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.stat-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.stat-icon {
+  font-size: 1.875rem;
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.stat-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+/* Description & Amenities */
+.info-block h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  color: var(--text-main);
+}
+
+.description-text {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Amenities Grid */
+.amenities-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .amenities-grid { grid-template-columns: 1fr 1fr 1fr; }
+}
+
+.amenity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  color: var(--text-main);
+}
+
+.amenity-icon {
+  font-size: 1.25rem;
+  color: #22c55e;
+  flex-shrink: 0;
+}
+
+.amenity-icon.negative { color: #ef4444; }
+
+/* Operating Hours */
+.hours-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hours-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-main);
+  color: var(--text-main);
+}
+
+.hours-row:last-child { border-bottom: none; }
+
+/* --- Right Column: Sidebar --- */
+.sidebar-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.availability-card {
+  position: sticky;
+  top: 80px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.date-picker-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main);
+}
+
+/* Date Input */
+.date-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Book Button Styling */
+.book-btn {
+  width: 100%;
+  padding: 12px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.book-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+
+.date-input {
+  width: 100%;
+  padding: 10px 10px 10px 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-main);
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  font-family: inherit;
+  box-sizing: border-box;
+  color-scheme: light; /* Default, will be overridden by global theme or specific selector if needed */
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+[data-theme='dark'] .date-input {
+    color-scheme: dark;
+}
+
+.calendar-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Schedule List */
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 256px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.schedule-item {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.schedule-item.clickable {
+  cursor: pointer;
+}
+
+.schedule-item.clickable:hover {
+  background-color: var(--bg-card);
+  border-color: var(--primary-color);
+}
+
+.schedule-item.selected {
+  background-color: var(--bg-card);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.schedule-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.time-text { color: var(--text-secondary); }
+
+.status-text.booked { color: #dc2626; font-weight: 500; }
+[data-theme='dark'] .status-text.booked { color: #f87171; }
+
+.status-text.available { color: #16a34a; font-weight: 500; }
+[data-theme='dark'] .status-text.available { color: #4ade80; }
+
+/* Login Prompt Box */
+.login-prompt-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  border: 2px dashed var(--border-main);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.lock-icon {
+  font-size: 1.875rem;
+  color: var(--text-muted);
+}
+
+.prompt-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.guest-info-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: rgba(var(--primary-rgb), 0.05);
+  border: 1px solid rgba(var(--primary-rgb), 0.1);
+  border-radius: 8px;
+  margin-top: 16px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.guest-info-box span {
+  color: var(--primary-color);
+  font-size: 20px;
+}
+
+.inline-login-btn {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-weight: 600;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.inline-login-btn:hover {
+  filter: brightness(1.2);
+}
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 1024px) {
+  /* Header responsive styles handled in Header.css */
+}
+
+@media (max-width: 768px) {
+  .details-main {
+    padding: 24px 16px;
+  }
+  
+  .details-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  
+  .space-title {
+    font-size: 1.75rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .availability-card {
+    position: static;
+  }
+}
+
+/* Map Card Styles */
+.map-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.map-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background-color: var(--bg-tertiary);
+  border: 2px dashed var(--border-main);
+  border-radius: 8px;
+  text-align: center;
+  min-height: 200px;
+}
+
+.map-placeholder .material-symbols-outlined {
+  font-size: 3rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.map-placeholder p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.map-address {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
