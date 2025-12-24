@@ -13,6 +13,14 @@ const {
 } = require('../utils/emailTemplates');
 
 /**
+ * Check if email sending is enabled
+ * @returns {boolean}
+ */
+const isEmailEnabled = () => {
+  return process.env.SEND_EMAILS === 'true';
+};
+
+/**
  * Create and configure email transporter
  * @returns {Object} Nodemailer transporter
  */
@@ -62,6 +70,19 @@ const createTransporter = () => {
  * @returns {Promise<Object>} Send result
  */
 const sendEmail = async ({ to, subject, html }) => {
+  // Check if email sending is disabled
+  if (!isEmailEnabled()) {
+    console.log('[EMAIL DISABLED] Email would be sent:', {
+      to: to,
+      subject: subject,
+    });
+    return {
+      success: true,
+      messageId: 'email-disabled-mock-id',
+      disabled: true,
+    };
+  }
+
   try {
     if (process.env.NODE_ENV !== 'test') {
       if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
@@ -260,5 +281,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendBookingConfirmationEmail,
   sendBookingCancellationEmail,
+  isEmailEnabled,
 };
-

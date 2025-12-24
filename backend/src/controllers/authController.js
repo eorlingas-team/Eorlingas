@@ -48,6 +48,7 @@ const generateVerificationCode = () => {
  */
 const sendVerificationEmail = async (to, token, code, fullName) => {
   try {
+    // Sanitize fullName to prevent XSS in email
     const safeFullName = escapeHtml(fullName || '');
     
     await sendVerificationEmailService({
@@ -70,6 +71,7 @@ const sendVerificationEmail = async (to, token, code, fullName) => {
  */
 const sendPasswordResetEmail = async (to, token, fullName) => {
   try {
+    // Sanitize fullName to prevent XSS in email
     const safeFullName = escapeHtml(fullName || '');
 
     await sendPasswordResetEmailService({
@@ -134,7 +136,13 @@ const register = async (req, res, next) => {
 
     await userModel.setVerificationToken(user.user_id, verificationToken, verificationCode, tokenExpiry);
 
-    await sendVerificationEmail(email, verificationToken, verificationCode, fullName);
+    // Try to send verification email, but don't block registration if it fails
+    try {
+      await sendVerificationEmail(email, verificationToken, verificationCode, fullName);
+    } catch (emailError) {
+      console.error('Failed to send verification email, but registration will continue:', emailError.message);
+      // In test mode (SEND_EMAILS !== 'true'), users can verify with code 123456
+    }
 
     await logAuditEvent({
       userId: user.user_id,
@@ -151,9 +159,15 @@ const register = async (req, res, next) => {
       },
     });
 
+    // Adjust message based on email status
+    const emailEnabled = process.env.SEND_EMAILS === 'true';
+    const message = emailEnabled
+      ? 'Registration successful! Please check your email to verify your account.'
+      : 'Registration successful! Use verification code 123456 to verify your account.';
+
     res.status(201).json({
       success: true,
-      message: 'Registration successful! Please check your email to verify your account.',
+      message: message,
       data: {
         userId: user.user_id,
         email: user.email,
@@ -387,16 +401,31 @@ const verifyEmail = async (req, res, next) => {
         });
       }
 
-      user = await userModel.findByEmailAndCode(email, code);
+      // TEST MODE: Allow 123456 as universal verification code when emails are disabled
+      if (code === '123456' && process.env.SEND_EMAILS !== 'true') {
+        user = await userModel.findByEmail(email);
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'User not found',
+            },
+          });
+        }
+        console.log('[TEST MODE] Verification bypass with code 123456 for:', email);
+      } else {
+        user = await userModel.findByEmailAndCode(email, code);
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: 'Invalid verification code',
-          },
-        });
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Invalid verification code',
+            },
+          });
+        }
       }
     }
     else {
@@ -783,6 +812,7 @@ const resetPassword = async (req, res, next) => {
  */
 const logout = async (req, res, next) => {
   try {
+    // If the user is authenticated (middleware attached user to req), log the event
     if (req.user && req.user.userId) {
       await userModel.setRefreshToken(req.user.userId, null); // Invalidate refresh token
       
