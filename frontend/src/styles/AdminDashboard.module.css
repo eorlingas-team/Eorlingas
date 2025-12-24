@@ -1,0 +1,336 @@
+/* frontend/src/pages/AdminDashboard.css */
+
+/* Base Layout */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dashboard-main {
+  flex: 1;
+  padding: 32px 24px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.content-wrapper {
+  width: 100%;
+  max-width: 80rem;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* Page Header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 900;
+  margin: 0;
+  letter-spacing: -0.03em;
+  color: var(--text-main);
+}
+
+/* Date Filters Improved Design */
+.date-filters {
+  display: flex;
+  align-items: flex-end; /* Align inputs to bottom so labels sit on top */
+  gap: 16px;
+}
+
+.date-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 4px;
+}
+
+.date-input-wrapper {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  min-width: 140px;
+}
+
+.date-input-wrapper:hover,
+.date-input-wrapper:focus-within {
+  border-color: var(--primary-color);
+  background-color: var(--bg-tertiary);
+}
+
+.input-icon {
+  color: var(--text-muted);
+  font-size: 1.25rem;
+}
+
+.custom-date-input {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 0.9rem;
+  color-scheme: light;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .custom-date-input {
+    color-scheme: dark;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 24px;
+}
+
+@media (min-width: 640px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.stat-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.stat-label {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.stat-value {
+  color: var(--text-main);
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.stat-subtext {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.text-green { color: var(--status-green); }
+.text-red { color: var(--status-red); }
+
+/* Charts Layout */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 1024px) {
+  .charts-grid { grid-template-columns: repeat(5, 1fr); }
+  .lg-col-span-2 { grid-column: span 2; }
+  .lg-col-span-3 { grid-column: span 3; }
+}
+
+.chart-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.card-title {
+  color: var(--text-main);
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin: 0 0 16px 0;
+}
+
+/* Breakdown Specifics */
+.breakdown-header {
+  margin-bottom: 24px;
+}
+
+.breakdown-total {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main);
+}
+
+.breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.breakdown-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.breakdown-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
+.breakdown-label { color: var(--text-secondary); font-weight: 500; }
+.breakdown-count { color: var(--text-main); font-weight: 700; }
+
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+}
+
+.progress-bar-fill.primary { background-color: var(--primary-color); }
+.progress-bar-fill.warning { background-color: #fbbf24; }
+.progress-bar-fill.danger { background-color: var(--status-red); }
+.progress-bar-fill.muted { background-color: var(--text-muted); }
+
+/* Chart Container */
+.chart-container {
+  flex: 1;
+  min-height: 250px;
+  width: 100%;
+}
+
+/* Table Card */
+.table-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.spaces-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 3rem 1fr 8rem;
+  gap: 16px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-main);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr 8rem;
+  gap: 16px;
+  padding: 16px 8px;
+  align-items: center;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.table-row:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.col-rank {
+  display: flex;
+  align-items: center;
+}
+
+.rank-badge {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.col-space {
+  display: flex;
+  flex-direction: column;
+}
+
+.space-name {
+  color: var(--text-main);
+  font-weight: 600;
+  margin: 0;
+}
+
+.space-location {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.col-count {
+  text-align: right;
+  color: var(--text-main);
+}
+
+.no-data-row {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+/* Loading Indicator */
+.loading-indicator {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-main);
+  border-radius: 50%;
+  border-top-color: var(--primary-color);
+  animation: spin 1s linear infinite;
+  margin-left: 16px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
