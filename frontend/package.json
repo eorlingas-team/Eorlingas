@@ -4,11 +4,15 @@
   "main": "index.js",
   "scripts": {
     "start": "react-scripts start",
+<<<<<<< HEAD
     "dev": "npm start",
+=======
+>>>>>>> origin/main
     "build": "react-scripts build",
     "test": "react-scripts test"
   },
   "dependencies": {
+<<<<<<< HEAD
     "axiom": "^0.32.0",
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
@@ -22,10 +26,16 @@
     "react-router-dom": "^7.11.0",
     "react-scripts": "5.0.1",
     "recharts": "^3.6.0"
+=======
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-scripts": "5.0.1"
+>>>>>>> origin/main
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+<<<<<<< HEAD
   "description": "",
   "browserslist": {
     "production": [
@@ -44,4 +54,7 @@
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1"
   }
+=======
+  "description": ""
+>>>>>>> origin/main
 }

@@ -3,11 +3,14 @@ const express = require("express");
 const cors = require("cors");
 const pool = require("./config/db");
 
+<<<<<<< HEAD
 // Routes
 const authRoutes = require("./routes/authRoutes");
 const profileRoutes = require("./routes/profileRoutes");
 const spaceRoutes = require('./routes/spaceRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+=======
+>>>>>>> origin/main
 const app = express();
 
 app.use(cors());
@@ -29,6 +32,7 @@ app.get("/health/db", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
@@ -38,4 +42,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/cron', require('./routes/cronRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+=======
+>>>>>>> origin/main
 module.exports = app;

@@ -4,6 +4,7 @@ require("dotenv").config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+<<<<<<< HEAD
   options: "-c timezone=Europe/Istanbul",
   max: 20,
   idleTimeoutMillis: 30000,
@@ -13,6 +14,11 @@ const pool = new Pool({
       rejectUnauthorized: false   // Render için şart
     }
   })
+=======
+  ssl: {
+    rejectUnauthorized: false   // Render için şart
+  }
+>>>>>>> origin/main
 });
 
 pool.on("connect", () => {
@@ -23,4 +29,8 @@ pool.on("error", (err) => {
   console.error("PostgreSQL connection error:", err);
 });
 
+<<<<<<< HEAD
 module.exports = pool;
+=======
+module.exports = pool;
+>>>>>>> origin/main

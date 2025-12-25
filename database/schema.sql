@@ -10,7 +10,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================
 
 -- Drop tables if they exist to start fresh
+<<<<<<< HEAD
 DROP TABLE IF EXISTS booking_reports CASCADE;
+=======
+>>>>>>> origin/main
 DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS bookings CASCADE;
@@ -20,7 +23,10 @@ DROP TABLE IF EXISTS campuses CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- Drop types if they exist (optional, for full reset)
+<<<<<<< HEAD
 DROP TYPE IF EXISTS report_status CASCADE;
+=======
+>>>>>>> origin/main
 DROP TYPE IF EXISTS audit_action_type CASCADE;
 DROP TYPE IF EXISTS notification_status CASCADE;
 DROP TYPE IF EXISTS notification_type CASCADE;
@@ -54,20 +60,30 @@ CREATE TYPE notification_type AS ENUM (
     'Booking_Reminder',
     'Booking_Cancellation',
     'Administrative_Cancellation',
+<<<<<<< HEAD
     'Administrative_Action',
     'Account_Security',
     'Password_Reset',
     'Report',
     'Account_Suspension',
     'Account_Recovery'
+=======
+    'Account_Security',
+    'Password_Reset'
+>>>>>>> origin/main
 );
 CREATE TYPE notification_status AS ENUM ('Pending', 'Sent', 'Failed', 'Retry_Queued');
 
 CREATE TYPE audit_action_type AS ENUM (
+<<<<<<< HEAD
     'User_Registered',
     'Login_Success',
     'Login_Failed',
     'Logout',
+=======
+    'Login_Success',
+    'Login_Failed',
+>>>>>>> origin/main
     'Booking_Created',
     'Booking_Cancelled',
     'Space_Created',
@@ -79,8 +95,11 @@ CREATE TYPE audit_action_type AS ENUM (
     'Password_Reset'
 );
 
+<<<<<<< HEAD
 CREATE TYPE report_status AS ENUM ('Pending', 'Reviewed');
 
+=======
+>>>>>>> origin/main
 -- ==========================================
 -- 3. TABLES
 -- ==========================================
@@ -98,6 +117,7 @@ CREATE TABLE users (
     status user_status NOT NULL DEFAULT 'Unverified',
 
     email_verified BOOLEAN DEFAULT FALSE,
+<<<<<<< HEAD
     verification_token VARCHAR(255),
     verification_code VARCHAR(6),
     verification_token_expiry TIMESTAMP WITH TIME ZONE,
@@ -111,6 +131,11 @@ CREATE TABLE users (
     -- Notification preferences
     notification_preferences JSONB DEFAULT '{"emailNotifications": true, "webNotifications": true}'::jsonb,
 
+=======
+    registration_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login        TIMESTAMP WITH TIME ZONE,
+
+>>>>>>> origin/main
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
@@ -181,6 +206,12 @@ CREATE TABLE study_spaces (
     operating_hours_weekend_start TIME,
     operating_hours_weekend_end   TIME,
 
+<<<<<<< HEAD
+=======
+    maintenance_start_date TIMESTAMP WITH TIME ZONE,
+    maintenance_end_date   TIMESTAMP WITH TIME ZONE,
+
+>>>>>>> origin/main
     -- Soft delete metadata (for Use Case 8c)
     deleted_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     deleted_at TIMESTAMP WITH TIME ZONE,
@@ -194,7 +225,21 @@ CREATE TABLE study_spaces (
         CHECK (capacity >= 1 AND capacity <= 100),
 
     CONSTRAINT unique_room_in_building
+<<<<<<< HEAD
         UNIQUE (building_id, room_number)
+=======
+        UNIQUE (building_id, room_number),
+
+    -- Maintenance status must have valid dates
+    CONSTRAINT check_maintenance_dates CHECK (
+        (status <> 'Maintenance')
+        OR (
+            maintenance_start_date IS NOT NULL
+            AND maintenance_end_date   IS NOT NULL
+            AND maintenance_end_date > maintenance_start_date
+        )
+    )
+>>>>>>> origin/main
 );
 
 -- BOOKINGS TABLE
@@ -218,7 +263,10 @@ CREATE TABLE bookings (
         (EXTRACT(EPOCH FROM (end_time - start_time)) / 60)::INT
     ) STORED,
 
+<<<<<<< HEAD
     attendee_count      INTEGER NOT NULL DEFAULT 1,
+=======
+>>>>>>> origin/main
     purpose             TEXT,
     cancellation_reason booking_cancellation_reason,
     cancelled_at        TIMESTAMP WITH TIME ZONE,
@@ -232,6 +280,7 @@ CREATE TABLE bookings (
     CONSTRAINT check_booking_duration CHECK (
         (EXTRACT(EPOCH FROM (end_time - start_time)) / 60)
             BETWEEN 60 AND 180
+<<<<<<< HEAD
     ),
 
     -- Attendee count must be at least 1
@@ -240,6 +289,8 @@ CREATE TABLE bookings (
 
         attendee_count >= 1
 
+=======
+>>>>>>> origin/main
     )
 );
 
@@ -270,9 +321,14 @@ CREATE TABLE notifications (
     message           TEXT                NOT NULL,
     status            notification_status NOT NULL DEFAULT 'Pending',
 
+<<<<<<< HEAD
     is_read           BOOLEAN             NOT NULL DEFAULT FALSE,
     related_entity_id INTEGER,
     related_entity_type VARCHAR(50),
+=======
+    sent_at     TIMESTAMP WITH TIME ZONE,
+    retry_count INTEGER DEFAULT 0,
+>>>>>>> origin/main
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
@@ -302,6 +358,7 @@ CREATE TABLE audit_logs (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+<<<<<<< HEAD
 -- BOOKING REPORTS TABLE
 CREATE TABLE booking_reports (
     report_id SERIAL PRIMARY KEY,
@@ -337,6 +394,8 @@ CREATE TABLE booking_reports (
     CONSTRAINT check_not_self_report CHECK (reported_user_id != reporter_user_id)
 );
 
+=======
+>>>>>>> origin/main
 -- ==========================================
 -- 4. INDEXES (Performance)
 -- ==========================================
@@ -345,6 +404,7 @@ CREATE TABLE booking_reports (
 CREATE INDEX idx_users_email
     ON users(email);
 
+<<<<<<< HEAD
 -- Users: verification token lookups
 CREATE INDEX idx_users_verification_token
     ON users(verification_token)
@@ -355,6 +415,8 @@ CREATE INDEX idx_users_password_reset_token
     ON users(password_reset_token)
     WHERE password_reset_token IS NOT NULL;
 
+=======
+>>>>>>> origin/main
 -- Study spaces can also benefit from building/status lookups (optional, but useful)
 CREATE INDEX idx_study_spaces_building_status
     ON study_spaces(building_id, status);
@@ -377,15 +439,19 @@ CREATE INDEX idx_notifications_pending
     ON notifications (status)
     WHERE status IN ('Pending', 'Retry_Queued');
 
+<<<<<<< HEAD
 -- Unread notifications for a user
 CREATE INDEX idx_notifications_user_unread 
     ON notifications(user_id, is_read) 
     WHERE is_read = FALSE;
 
+=======
+>>>>>>> origin/main
 -- Optional: retry count index
 CREATE INDEX idx_notifications_retry_count
     ON notifications (retry_count);
 
+<<<<<<< HEAD
 -- Booking reports: status-based queries
 CREATE INDEX idx_booking_reports_status
     ON booking_reports (status);
@@ -403,6 +469,8 @@ CREATE INDEX idx_booking_reports_defense_token
     ON booking_reports (defense_token)
     WHERE defense_token IS NOT NULL;
 
+=======
+>>>>>>> origin/main
 -- ==========================================
 -- 5. FUNCTION & TRIGGERS FOR updated_at
 -- ==========================================
