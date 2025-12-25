@@ -10,6 +10,17 @@ const logAuditEvent = require('../utils/auditLogger');
 const createBooking = async (req, res, next) => {
   try {
     const userId = req.user.userId;
+
+    if (req.user.status === 'Suspended') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_SUSPENDED',
+          message: 'Your account is suspended. You cannot make new bookings.',
+        },
+      });
+    }
+
     const { spaceId, startTime, endTime, attendeeCount, purpose } = req.body;
 
     const validation = bookingService.validateBookingRequest({

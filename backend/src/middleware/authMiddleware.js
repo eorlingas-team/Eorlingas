@@ -45,12 +45,13 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    if (user.status === 'Deleted' || user.status === 'Suspended') {
+
+    if (user.status === 'Deleted') {
       return res.status(403).json({
         success: false,
         error: {
           code: 'FORBIDDEN',
-          message: 'Account is suspended or deleted',
+          message: 'Account is deleted',
         },
       });
     }

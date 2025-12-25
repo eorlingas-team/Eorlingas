@@ -300,25 +300,10 @@ const login = async (req, res, next) => {
           // Continue with login - user is now restored
           console.log(`User ${user.email} auto-restored from suspension`);
         } else {
-          // Still suspended
-          return res.status(403).json({
-            success: false,
-            error: {
-              code: 'ACCOUNT_SUSPENDED',
-              message: 'Your account has been suspended',
-              suspendedUntil: suspendedUntil.toISOString(),
-            },
-          });
+             console.log(`Suspended user ${user.email} logged in. Suspension until: ${suspendedUntil}`);
         }
       } else {
-        // No expiry date - permanent suspension
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'ACCOUNT_SUSPENDED',
-            message: 'Your account has been suspended',
-          },
-        });
+          console.log(`Permanently suspended user ${user.email} logged in.`);
       }
     }
 

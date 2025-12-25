@@ -63,8 +63,7 @@ const TimeSlotGrid = ({
     const minutesToTime = (minutes) => {
         const h = Math.floor(minutes / 60);
         const m = minutes % 60;
-        const displayH = h === 24 ? 0 : h;
-        return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     };
 
     // Generate all slots for the day
@@ -333,7 +332,7 @@ const TimeSlotGrid = ({
                                 className={styles['time-label']}
                                 style={{ top: `${slots.findIndex(s => s.minutes === slot.minutes) * SLOT_HEIGHT}px` }}
                             >
-                                {slot.time}
+                                {slot.time.replace(/^24:/, '00:')}
                             </div>
                         ))}
                     </div>
@@ -360,7 +359,7 @@ const TimeSlotGrid = ({
                             >
                                 <div className={styles['selection-content']}>
                                     <span className={styles['selection-time']}>
-                                        {minutesToTime(selectionStart)} - {minutesToTime(selectionEnd)}
+                                        {minutesToTime(selectionStart).replace(/^24:/, '00:')} - {minutesToTime(selectionEnd).replace(/^24:/, '00:')}
                                     </span>
                                     <span className={styles['selection-duration']}>
                                         {formatDuration(selectionEnd - selectionStart)}

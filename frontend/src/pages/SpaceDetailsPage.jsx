@@ -153,7 +153,11 @@ const SpaceDetailsPage = () => {
       if (!hours || !hours.end) {
         shouldSkipToday = true;
       } else {
-        const [endHour, endMinute] = hours.end.split(':').map(Number);
+        let [endHour, endMinute] = hours.end.split(':').map(Number);
+
+        if (endHour === 0 && endMinute === 0) {
+          endHour = 24;
+        }
 
         const currentTotalMinutes = currentHour * 60 + currentMinute;
         const closingTotalMinutes = endHour * 60 + endMinute;
@@ -173,6 +177,11 @@ const SpaceDetailsPage = () => {
         });
       } else {
         setMinDate(todayStr);
+
+        const tomorrowStr = format(addDays(now, 1), 'yyyy-MM-dd');
+        setDate((prevDate) => {
+          return prevDate === tomorrowStr ? todayStr : prevDate;
+        });
       }
     };
 

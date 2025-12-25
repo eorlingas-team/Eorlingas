@@ -12,6 +12,7 @@ const {
   getBookingConfirmationTemplate,
   getBookingCancellationTemplate,
   getReportNotificationTemplate,
+  getAccountSuspensionTemplate,
 } = require('../utils/emailTemplates');
 
 /**
@@ -357,6 +358,37 @@ const sendBookingReminderEmail = async ({ to, fullName, booking }) => {
   }
 };
 
+/**
+ * Send account suspension email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @param {Date} data.suspendedUntil - Suspension end date
+ * @param {string} [data.reason] - Reason for suspension
+ * @returns {Promise<Object>} Send result
+ */
+const sendAccountSuspensionEmail = async ({ to, fullName, suspendedUntil, reason }) => {
+  try {
+    const formattedDate = formatDateTime(suspendedUntil);
+    
+    const html = getAccountSuspensionTemplate({
+      fullName,
+      suspendedUntil: formattedDate.date,
+      reason
+    });
+
+    return await sendEmail({
+      to,
+      subject: 'Account Suspended - İTÜ Study Space Finder',
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending account suspension email:', error);
+    // Don't throw error to prevent blocking the suspension process
+    console.error('Failed to send suspension email but continuing execution');
+  }
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
@@ -366,4 +398,5 @@ module.exports = {
   sendReportNotificationEmail,
   sendBookingReminderEmail,
   isEmailEnabled,
+  sendAccountSuspensionEmail,
 };
