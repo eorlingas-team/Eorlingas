@@ -21,6 +21,7 @@ const ReportsManagementPage = () => {
     const [selectedReport, setSelectedReport] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+    const [suspendLoading, setSuspendLoading] = useState(false);
 
     const fetchReports = useCallback(async () => {
         try {
@@ -82,16 +83,16 @@ const ReportsManagementPage = () => {
             confirmText: 'Suspend',
             variant: 'danger',
             onConfirm: async () => {
-                setActionLoading(true);
+                setSuspendLoading(true);
                 try {
-                    await adminApi.updateUser(userId, { action: 'suspend' });
+                    await adminApi.updateUser(userId, 'suspend');
                     addToast('User suspended for 1 week', 'success');
                     fetchReports();
                 } catch (error) {
                     console.error('Error suspending user:', error);
                     addToast('Failed to suspend user', 'error');
                 } finally {
-                    setActionLoading(false);
+                    setSuspendLoading(false);
                 }
             }
         });
@@ -242,16 +243,16 @@ const ReportsManagementPage = () => {
                                             <button
                                                 className={styles['action-btn-secondary']}
                                                 onClick={() => handleMarkAsReviewed(selectedReport.reportId)}
-                                                disabled={actionLoading}
+                                                disabled={actionLoading || suspendLoading}
                                             >
                                                 {actionLoading ? <LoadingSpinner size="sm" /> : 'Mark as Reviewed'}
                                             </button>
                                             <button
                                                 className={styles['action-btn-danger']}
                                                 onClick={() => handleSuspendUser(selectedReport.reportedUserId)}
-                                                disabled={actionLoading}
+                                                disabled={actionLoading || suspendLoading}
                                             >
-                                                Suspend User
+                                                {suspendLoading ? <LoadingSpinner size="sm" /> : 'Suspend User'}
                                             </button>
                                         </>
                                     )}

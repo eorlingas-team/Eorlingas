@@ -516,6 +516,60 @@ const getBookingReminderTemplate = ({
   return getBaseTemplate(content, 'Booking Reminder - İTÜ Study Space Finder');
 };
 
+
+/**
+ * Account suspension email template
+ * @param {Object} data - Email data
+ * @param {string} data.fullName - User's full name
+ * @param {string} data.suspendedUntil - Suspension end date (formatted)
+ * @param {string} data.reason - Reason for suspension (optional)
+ * @returns {string} HTML email
+ */
+const getAccountSuspensionTemplate = ({
+  fullName,
+  suspendedUntil,
+  reason
+}) => {
+  const content = `
+    <h2 style="margin: 0 0 20px 0; color: #dc2626;">Account Suspended</h2>
+    
+    <p>Hello <strong>${fullName}</strong>,</p>
+    
+    <p>Your account has been suspended.</p>
+    
+    <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h3 style="margin: 0 0 15px 0; color: #dc2626;">Suspension Details</h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Status:</td>
+          <td style="padding: 8px 0; color: #dc2626; font-weight: 700;">Suspended</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Suspended Until:</td>
+          <td style="padding: 8px 0; color: #111827;">${suspendedUntil}</td>
+        </tr>
+        ${reason ? `
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Reason:</td>
+          <td style="padding: 8px 0; color: #111827;">${reason}</td>
+        </tr>
+        ` : ''}
+      </table>
+    </div>
+    
+    <div class="warning-box" style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Notice:</strong> All your upcoming bookings have been cancelled. You will not be able to make new bookings until your suspension period ends.
+      </p>
+    </div>
+        
+    <div class="divider"></div>
+  `;
+  
+  return getBaseTemplate(content, 'Account Suspended - İTÜ Study Space Finder');
+};
+
+
 module.exports = {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
@@ -523,5 +577,5 @@ module.exports = {
   getBookingCancellationTemplate,
   getReportNotificationTemplate,
   getBookingReminderTemplate,
+  getAccountSuspensionTemplate,
 };
-

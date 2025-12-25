@@ -52,9 +52,22 @@ export const getDateRangeIstanbul = (days = 14) => {
  * @returns {string} ISO string in UTC
  */
 export const createIstanbulDateTime = (dateStr, timeStr) => {
-  const istanbulDateTimeStr = `${dateStr}T${timeStr}:00`;
+  let targetTimeStr = timeStr;
+  let addDay = false;
+
+  if (timeStr === '24:00') {
+    targetTimeStr = '00:00';
+    addDay = true;
+  }
+
+  const istanbulDateTimeStr = `${dateStr}T${targetTimeStr}:00`;
   // Parse as Istanbul time, convert to UTC
-  const utcDate = fromZonedTime(new Date(istanbulDateTimeStr), ISTANBUL_TZ);
+  let utcDate = fromZonedTime(new Date(istanbulDateTimeStr), ISTANBUL_TZ);
+  
+  if (addDay) {
+    utcDate = addDays(utcDate, 1);
+  }
+
   return utcDate.toISOString();
 };
 

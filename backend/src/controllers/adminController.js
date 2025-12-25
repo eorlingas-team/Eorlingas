@@ -5,6 +5,7 @@ const userModel = require('../models/userModel');
 const validationSchemas = require('../utils/validationSchemas');
 const { getIstanbulNow } = require('../utils/dateHelpers');
 const { formatInTimeZone } = require('date-fns-tz');
+const emailService = require('../services/emailService');
 
 // --- Helper Functions ---
 
@@ -387,6 +388,16 @@ const updateUser = async (req, res) => {
           status: 'Suspended',
           suspended_until: suspendedUntil
         });
+        
+        // Send suspension email notification
+        if (user.email) {
+            await emailService.sendAccountSuspensionEmail({
+                to: user.email,
+                fullName: user.full_name,
+                suspendedUntil: suspendedUntil,
+                reason: 'Administrative Action'
+            });
+        }
         
         await logAuditEvent({
           userId: req.user?.userId || null,
