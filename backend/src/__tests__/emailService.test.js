@@ -5,28 +5,35 @@
 
 // Set test environment
 process.env.NODE_ENV = 'test';
-process.env.EMAIL_HOST = 'smtp.gmail.com';
-process.env.EMAIL_PORT = '587';
-process.env.EMAIL_USER = 'test@example.com';
-process.env.EMAIL_PASS = 'test_password';
+process.env.SEND_EMAILS = 'true';
+process.env.SENDGRID_API_KEY = 'SG.test_sendgrid_api_key';
 process.env.EMAIL_FROM = 'Test <test@example.com>';
 process.env.FRONTEND_URL = 'http://localhost:3000';
 
 const emailService = require('../services/emailService');
 const emailTemplates = require('../utils/emailTemplates');
 
-// Mock nodemailer
-jest.mock('nodemailer', () => {
-  const mockTransporter = {
-    sendMail: jest.fn(),
-  };
+// Mock pool
+jest.mock('../config/db', () => ({
+  query: jest.fn().mockResolvedValue({ rows: [] }),
+}));
 
+const pool = require('../config/db');
+
+// Mock SendGrid
+jest.mock('@sendgrid/mail', () => {
   return {
-    createTransport: jest.fn(() => mockTransporter),
+    setApiKey: jest.fn(),
+    send: jest.fn().mockResolvedValue([{
+      statusCode: 202,
+      headers: {
+        'x-message-id': 'test-message-id',
+      },
+    }]),
   };
 });
 
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
 describe('Email Service', () => {
   beforeEach(() => {
@@ -68,14 +75,9 @@ describe('Email Service', () => {
 
     it('should throw error when email configuration is missing in non-test mode', async () => {
       const originalEnv = process.env.NODE_ENV;
-      delete process.env.EMAIL_USER;
-      delete process.env.EMAIL_PASS;
+      const originalApiKey = process.env.SENDGRID_API_KEY;
+      delete process.env.SENDGRID_API_KEY;
       process.env.NODE_ENV = 'development';
-
-      // Mock createTransport to throw error
-      nodemailer.createTransport.mockImplementation(() => {
-        throw new Error('Email service not configured');
-      });
 
       await expect(
         emailService.sendEmail({
@@ -83,14 +85,30 @@ describe('Email Service', () => {
           subject: 'Test',
           html: '<p>Test</p>',
         })
-      ).rejects.toThrow();
+      ).rejects.toThrow('Email service not configured');
 
       // Restore
       process.env.NODE_ENV = originalEnv;
-      process.env.EMAIL_USER = 'test@example.com';
-      process.env.EMAIL_PASS = 'test_password';
+      process.env.SENDGRID_API_KEY = originalApiKey;
     });
-  });
+
+    it('should block email if user has disabled email notifications', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ notification_preferences: { emailNotifications: false } }]
+      });
+
+      const result = await emailService.sendEmail({
+        to: 'optout@example.com',
+        subject: 'Test',
+        html: '<p>Test</p>',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.blocked).toBe(true);
+      expect(result.messageId).toBe('blocked-by-user-preferences');
+      expect(sgMail.send).not.toHaveBeenCalled();
+    });
+   });
 
   describe('sendVerificationEmail', () => {
     it('should send verification email with correct parameters', async () => {

@@ -109,6 +109,7 @@ export const SpaceManagerProvider = ({ children }) => {
             const params = {
                 page: 1,
                 limit: 1000, 
+                includeDeleted: true
             };
 
             const response = await spacesApi.getAll(params);

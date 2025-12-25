@@ -17,6 +17,7 @@
     "supertest": "^7.1.4"
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
@@ -26,7 +27,6 @@
     "express": "^5.2.1",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
-    "nodemailer": "^7.0.11",
     "pg": "^8.16.3"
   }
 }

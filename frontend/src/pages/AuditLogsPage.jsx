@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useAdmin } from '../contexts/AdminContext';
 import DataTable from '../components/DataTable';
 import Header from '../components/Header';
@@ -11,12 +11,10 @@ const AuditLogsPage = () => {
     auditLogs,
     auditLogsLoading,
     auditLogsFilters,
-    auditLogsPagination,
     actions
   } = useAdmin();
 
   const { addToast } = useToast();
-  const [localSearch, setLocalSearch] = useState('');
 
   const cleanDeletedEmail = (email) => {
     if (!email) return email;
@@ -28,16 +26,9 @@ const AuditLogsPage = () => {
   };
 
   useEffect(() => {
-    actions.fetchAuditLogs(false, true, { page: 1 });
+    actions.fetchAuditLogs(false, true);
   }, [auditLogsFilters]);
 
-  const handlePageChange = (newPage) => {
-    actions.fetchAuditLogs(false, true, { page: newPage });
-  };
-
-  const handleRowsPerPageChange = (newLimit) => {
-    actions.fetchAuditLogs(false, true, { page: 1, limit: newLimit });
-  };
 
   const handleExport = async () => {
     try {
@@ -189,7 +180,6 @@ const AuditLogsPage = () => {
   ];
 
   const handleClearFilters = () => {
-    setLocalSearch('');
     actions.updateAuditLogsFilters({
       actionType: 'All',
       targetEntity: 'All',
@@ -225,9 +215,6 @@ const AuditLogsPage = () => {
             columns={columns}
             data={auditLogs}
             loading={auditLogsLoading}
-            // searchTerm={localSearch} // Search disabled for server-side for now
-            // onSearchChange={setLocalSearch} 
-            // searchPlaceholder="Search audit logs..."
             filters={filters}
             onClearFilters={handleClearFilters}
             onFilterChange={(newFilters) => {
@@ -239,18 +226,8 @@ const AuditLogsPage = () => {
             activeFilters={auditLogsFilters}
             emptyMessage="No audit logs found"
             containerClass={styles['logs-table']}
-            clientSide={false}
-            pagination={{
-              total: auditLogsPagination.total,
-              totalPages: auditLogsPagination.totalPages,
-              current: auditLogsPagination.currentPage,
-              showing: {
-                start: (auditLogsPagination.currentPage - 1) * auditLogsPagination.limit + 1,
-                end: Math.min(auditLogsPagination.currentPage * auditLogsPagination.limit, auditLogsPagination.total)
-              },
-              onPageChange: handlePageChange,
-              onRowsPerPageChange: handleRowsPerPageChange
-            }}
+            clientSide={true}
+            itemsPerPage={20}
           />
 
         </div>

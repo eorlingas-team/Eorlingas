@@ -94,8 +94,8 @@ const getSystemStats = async (req, res) => {
       // Breakdown: Booking Status
       db.query(`
         SELECT
-          COUNT(CASE WHEN status = 'Confirmed' AND (start_time + INTERVAL '15 minutes') <= NOW() THEN 1 END) as completed,
-          COUNT(CASE WHEN status = 'Confirmed' AND (start_time + INTERVAL '15 minutes') > NOW() THEN 1 END) as upcoming,
+          COUNT(CASE WHEN status = 'Confirmed' AND start_time <= NOW() THEN 1 END) as completed,
+          COUNT(CASE WHEN status = 'Confirmed' AND start_time > NOW() THEN 1 END) as upcoming,
           COUNT(CASE WHEN status = 'Cancelled' THEN 1 END) as cancelled
         FROM bookings
         WHERE 1=1 ${bookingDateClause}

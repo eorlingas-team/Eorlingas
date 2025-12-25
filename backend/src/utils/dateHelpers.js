@@ -13,7 +13,7 @@ const ISTANBUL_TZ = 'Europe/Istanbul';
  * @returns {Date} Current Istanbul time as a Date object
  */
 const getIstanbulNow = () => {
-  return toZonedTime(new Date(), ISTANBUL_TZ);
+  return new Date();
 };
 
 /**

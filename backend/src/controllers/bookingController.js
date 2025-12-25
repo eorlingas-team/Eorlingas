@@ -66,12 +66,12 @@ const createBooking = async (req, res, next) => {
       });
     }
 
-    if (error.code === '23505') {
+    if (error.code === '23505' || error.code === '23P01') {
       return res.status(409).json({
         success: false,
         error: {
           code: 'CONFLICT',
-          message: 'Space is already booked at this time',
+          message: 'Space is already booked by someone else at this time',
         },
       });
     }

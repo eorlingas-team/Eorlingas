@@ -18,7 +18,19 @@ export const getTodayIstanbul = () => {
  * @returns {Date} Current time in Istanbul timezone
  */
 export const getIstanbulNow = () => {
-  return toZonedTime(new Date(), ISTANBUL_TZ);
+  return new Date();
+};
+
+/**
+ * Get Istanbul hour and minute from a Date
+ * @param {Date|string} date - Date to extract time from
+ * @returns {{ hour: number, minute: number }} Hour and minute in Istanbul time
+ */
+export const getIstanbulHourMinute = (date) => {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const timeStr = formatInTimeZone(d, ISTANBUL_TZ, 'HH:mm');
+  const [hour, minute] = timeStr.split(':').map(Number);
+  return { hour, minute };
 };
 
 /**

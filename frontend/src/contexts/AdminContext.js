@@ -193,7 +193,7 @@ export const AdminProvider = ({ children }) => {
         }
     }, [fetchUsers, fetchStats]);
 
-    // Fetch Audit Logs 
+    // Fetch Audit Logs
     const fetchAuditLogs = useCallback(async (isBackground = false, force = false, params = {}) => {
         try {
             if (!isBackground) {
@@ -201,26 +201,14 @@ export const AdminProvider = ({ children }) => {
             }
             setAuditLogsError(null);
 
-            const queryParams = {
-                page: params.page || auditLogsPagination.currentPage,
-                limit: params.limit || auditLogsPagination.limit,
-                actionType: auditLogsFilters.actionType !== 'All' ? auditLogsFilters.actionType : undefined,
-                targetEntityType: auditLogsFilters.targetEntity !== 'All' ? auditLogsFilters.targetEntity : undefined,
-                result: auditLogsFilters.result !== 'All' ? auditLogsFilters.result : undefined,
-                startDate: auditLogsFilters.startDate || undefined,
-                endDate: auditLogsFilters.endDate || undefined,
-                search: auditLogsFilters.search || undefined,
-                ...params 
-            };
-
             const backendParams = {
-              page: queryParams.page,
-              limit: queryParams.limit,
-              actionType: queryParams.actionType,
-              targetEntityType: queryParams.targetEntityType,
-              result: queryParams.result,
-              dateFrom: queryParams.startDate,
-              dateTo: queryParams.endDate,
+              page: 1,
+              limit: 10000,
+              actionType: auditLogsFilters.actionType !== 'All' ? auditLogsFilters.actionType : undefined,
+              targetEntityType: auditLogsFilters.targetEntity !== 'All' ? auditLogsFilters.targetEntity : undefined,
+              result: auditLogsFilters.result !== 'All' ? auditLogsFilters.result : undefined,
+              dateFrom: auditLogsFilters.startDate || undefined,
+              dateTo: auditLogsFilters.endDate || undefined,
             };
 
             const response = await adminApi.getAuditLogs(backendParams);
@@ -229,10 +217,10 @@ export const AdminProvider = ({ children }) => {
                 const fetchedLogs = response.data.data.logs || [];
                 setAuditLogs(fetchedLogs);
                 setAuditLogsPagination({
-                    total: response.data.data.pagination.total,
-                    totalPages: response.data.data.pagination.totalPages,
-                    currentPage: response.data.data.pagination.page,
-                    limit: response.data.data.pagination.limit
+                    total: fetchedLogs.length,
+                    totalPages: 1,
+                    currentPage: 1,
+                    limit: fetchedLogs.length
                 });
             }
         } catch (err) {
@@ -242,7 +230,7 @@ export const AdminProvider = ({ children }) => {
         } finally {
             setAuditLogsLoading(false);
         }
-    }, [auditLogsFilters, auditLogsPagination.currentPage, auditLogsPagination.limit]);
+    }, [auditLogsFilters]);
 
     // Export Audit Logs
     const exportAuditLogs = useCallback(async (format = 'csv', filters = auditLogsFilters) => {

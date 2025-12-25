@@ -7,7 +7,7 @@ import StatsGrid from '../components/StatsGrid';
 import Header from '../components/Header';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { formatDate, formatTime } from '../utils/dateUtils';
+import { formatDate, formatTime, getIstanbulNow } from '../utils/dateUtils';
 
 const MyBookingsPage = () => {
   const navigate = useNavigate();
@@ -28,14 +28,23 @@ const MyBookingsPage = () => {
 
   const activeBookings = activeTab === 'upcoming' ? data.upcoming : activeTab === 'past' ? data.past : data.cancelled;
 
-  const handleCancel = async (id) => {
+  const handleCancel = async (booking) => {
+    const startTime = new Date(booking.startTime);
+    const now = getIstanbulNow();
+    const diffMinutes = (startTime - now) / (1000 * 60);
+
+    if (diffMinutes <= 15) {
+      addToast("You can only cancel your booking up to 15 minutes before the start time.", "error");
+      return;
+    }
+
     await confirm({
       title: "Cancel Booking",
       message: "Are you sure you want to cancel this booking?",
       confirmText: "Cancel Booking",
       variant: "warning",
       onConfirm: async () => {
-        await cancelBooking(id, "User_Requested");
+        await cancelBooking(booking.bookingId, "User_Requested");
         addToast("Booking cancelled successfully.", "success");
       }
     });
@@ -121,7 +130,7 @@ const MyBookingsPage = () => {
 
                     <div className={`${styles['card-actions']}`}>
                       {activeTab === 'upcoming' && booking.status === 'Confirmed' && (
-                        <button className={`${styles['btn-cancel-booking']}`} onClick={() => handleCancel(booking.bookingId)}>
+                        <button className={`${styles['btn-cancel-booking']}`} onClick={() => handleCancel(booking)}>
                           Cancel Booking
                         </button>
                       )}

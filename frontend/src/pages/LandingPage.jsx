@@ -20,6 +20,7 @@ const LandingPage = () => {
     filters,
     searchTerm,
     meta,
+    globalMaxCapacity,
     actions
   } = useSpaces();
 
@@ -54,7 +55,7 @@ const LandingPage = () => {
   };
 
   // Local state for slider to allow smooth sliding without constant API calls
-  const [localCapacity, setLocalCapacity] = useState([0, 200]);
+  const [localCapacity, setLocalCapacity] = useState([0, globalMaxCapacity]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState('list');
 
@@ -63,11 +64,11 @@ const LandingPage = () => {
     if (Array.isArray(filters.capacity)) {
       setLocalCapacity(filters.capacity);
     } else if (filters.capacity === 'All') {
-      setLocalCapacity([0, 200]);
+      setLocalCapacity([0, globalMaxCapacity]);
     } else if (typeof filters.capacity === 'number') {
-      setLocalCapacity([filters.capacity, 200]);
+      setLocalCapacity([filters.capacity, globalMaxCapacity]);
     }
-  }, [filters.capacity]);
+  }, [filters.capacity, globalMaxCapacity]);
 
   // Navigation
   const handleViewDetails = (space) => {
@@ -182,7 +183,7 @@ const LandingPage = () => {
                 <Slider
                   range
                   min={0}
-                  max={200}
+                  max={globalMaxCapacity}
                   step={5}
                   value={localCapacity}
                   onChange={(value) => setLocalCapacity(value)}
@@ -222,7 +223,7 @@ const LandingPage = () => {
                 filters.type === 'All' &&
                 filters.noiseLevel === 'All' &&
                 filters.available === false &&
-                (filters.capacity === 'All' || (Array.isArray(filters.capacity) && filters.capacity[0] === 0 && filters.capacity[1] === 200))
+                (filters.capacity === 'All' || (Array.isArray(filters.capacity) && filters.capacity[0] === 0 && filters.capacity[1] === globalMaxCapacity))
               }
               onClick={() => actions.updateFilters({
                 campus: 'All', building: 'All', capacity: 'All', type: 'All', available: false, noiseLevel: 'All'
@@ -325,11 +326,15 @@ const LandingPage = () => {
                 <div key={space.spaceId} className={`${styles['space-card']}`}>
 
                   {space.status === 'Available' ? (
-                    <div className={`${styles['landing-status-indicator']} ${styles['available']}`}>
+                    <div className={`${styles['landing-status-indicator']} ${styles['available']}`} title="Available Now">
+                      <div className={`${styles['landing-status-dot']}`}></div>
+                    </div>
+                  ) : space.status === 'Maintenance' ? (
+                    <div className={`${styles['landing-status-indicator']} ${styles['maintenance']}`} title="Under Maintenance">
                       <div className={`${styles['landing-status-dot']}`}></div>
                     </div>
                   ) : (
-                    <div className={`${styles['landing-status-indicator']} ${styles['booked']}`}>
+                    <div className={`${styles['landing-status-indicator']} ${styles['booked']}`} title="Unavailable">
                       <div className={`${styles['landing-status-dot']}`}></div>
                     </div>
                   )}
