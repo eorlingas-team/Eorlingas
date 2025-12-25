@@ -295,7 +295,20 @@ const deleteAccount = async (req, res, next) => {
     );
 
     // Perform soft delete
-    await userModel.update(userId, { status: 'Deleted' });
+    const timestamp = Date.now();
+    const updates = { 
+      status: 'Deleted'
+    };
+
+    if (user.email) {
+      const [localPart, domain] = user.email.split('@');
+      updates.email = `${localPart}_deleted_${timestamp}@${domain || 'itu.edu.tr'}`;
+    }
+    if (user.student_number) {
+      updates.student_number = `${user.student_number}_deleted_${timestamp}`;
+    }
+
+    await userModel.update(userId, updates);
 
     // Clear refresh token
     await userModel.clearRefreshToken(userId);

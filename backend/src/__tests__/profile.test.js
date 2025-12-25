@@ -665,15 +665,17 @@ describe('Profile Controller', () => {
   });
 
   describe('deleteAccount', () => {
-    it('should delete account successfully and cancel bookings', async () => {
+    it('should delete account successfully and cancel bookings with anonymization', async () => {
       const mockUser = {
         user_id: 1,
+        email: 'test@itu.edu.tr',
+        student_number: '123456789',
         role: 'Student',
         status: 'Verified',
       };
 
       userModel.findById.mockResolvedValue(mockUser);
-      pool.query.mockResolvedValue({ rows: [] }); // For admin check (if applicable) and booking update
+      pool.query.mockResolvedValue({ rows: [] }); // For admin check and booking update
       userModel.update.mockResolvedValue({ ...mockUser, status: 'Deleted' });
       userModel.clearRefreshToken.mockResolvedValue(true);
 
@@ -685,7 +687,14 @@ describe('Profile Controller', () => {
         expect.stringContaining("cancellation_reason = 'User_Requested'"),
         [1]
       );
-      expect(userModel.update).toHaveBeenCalledWith(1, { status: 'Deleted' });
+      
+      // Verify anonymization logic
+      expect(userModel.update).toHaveBeenCalledWith(1, expect.objectContaining({
+        status: 'Deleted',
+        email: expect.stringContaining('test_deleted_'),
+        student_number: expect.stringContaining('123456789_deleted_')
+      }));
+
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
