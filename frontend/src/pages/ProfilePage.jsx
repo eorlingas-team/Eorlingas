@@ -106,7 +106,10 @@ const ProfilePage = () => {
         studentNumber: user.studentNumber || ''
       });
       if (user.notificationPreferences) {
-        setNotificationPrefs(user.notificationPreferences);
+        setNotificationPrefs({
+          emailNotif: user.notificationPreferences.emailNotifications !== false,
+          webNotif: user.notificationPreferences.webNotifications !== false
+        });
       }
     }
   }, [user]);
@@ -147,7 +150,12 @@ const ProfilePage = () => {
     setNotificationPrefs(newPrefs);
 
     try {
-      await updateProfile({ notificationPreferences: newPrefs });
+      const backendPrefs = {
+        emailNotifications: newPrefs.emailNotif,
+        webNotifications: newPrefs.webNotif
+      };
+
+      await updateProfile({ notificationPreferences: backendPrefs });
     } catch (error) {
       console.error("Failed to update preferences", error);
       setNotificationPrefs(prev => ({ ...prev, [key]: !prev[key] }));

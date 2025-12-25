@@ -6,6 +6,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import StatsGrid from '../components/StatsGrid';
 import Header from '../components/Header';
 import { useToast } from '../contexts/ToastContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { formatDate, formatTime, getIstanbulNow } from '../utils/dateUtils';
 
@@ -15,6 +16,7 @@ const MyBookingsPage = () => {
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const { bookings: data, loading, isInitialized, fetchBookings, refreshBookings, cancelBooking } = useBooking();
+  const { fetchUnreadCount } = useNotifications();
   const [activeTab, setActiveTab] = useState('upcoming');
 
   useEffect(() => {
@@ -46,6 +48,7 @@ const MyBookingsPage = () => {
       onConfirm: async () => {
         await cancelBooking(booking.bookingId, "User_Requested");
         addToast("Booking cancelled successfully.", "success");
+        fetchUnreadCount();
       }
     });
   };

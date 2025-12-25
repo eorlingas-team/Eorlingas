@@ -1,12 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
+import NotificationPanel from './NotificationPanel';
 import styles from '../styles/Header.module.css';
 
 const Header = () => {
     const navigate = useNavigate();
     const { isAuthenticated, user, logout } = useAuth();
+    const { notifications, unreadCount, loading: notifLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotifications();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isNotifPanelOpen, setIsNotifPanelOpen] = useState(false);
+
+    const handleNotifToggle = () => {
+        if (!isNotifPanelOpen) {
+            fetchNotifications();
+        }
+        setIsNotifPanelOpen(!isNotifPanelOpen);
+    };
 
     const getRoleKey = (role) => {
         if (!role) return 'guest';
@@ -142,9 +153,28 @@ const Header = () => {
         return (
             <>
                 {/* Notification icon button */}
-                <button className={`${styles['icon-btn']}`} title="Notifications">
+                <button
+                    className={`${styles['icon-btn']} ${isNotifPanelOpen ? styles.active : ''}`}
+                    title="Notifications"
+                    onClick={handleNotifToggle}
+                >
                     <span className={`material-symbols-outlined`}>notifications</span>
+                    {unreadCount > 0 && (
+                        <span className={styles['badge']}>
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
                 </button>
+
+                {isNotifPanelOpen && (
+                    <NotificationPanel
+                        notifications={notifications}
+                        loading={notifLoading}
+                        onMarkAsRead={markAsRead}
+                        onMarkAllAsRead={markAllAsRead}
+                        onClose={() => setIsNotifPanelOpen(false)}
+                    />
+                )}
 
                 {/* Profile icon */}
                 <div className={`${styles['user-avatar-small']} ${isActive('/profile') ? styles.active : ''}`} onClick={() => navigate('/profile')} title="Profile">

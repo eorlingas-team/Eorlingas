@@ -5,6 +5,7 @@ import { useBooking } from '../contexts/BookingContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import styles from '../styles/BookingDetailsPage.module.css';
 import Header from '../components/Header';
+import { useNotifications } from '../contexts/NotificationContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { formatDate, formatTime, formatDateTime, getIstanbulNow } from '../utils/dateUtils';
@@ -16,6 +17,7 @@ const BookingDetailsPage = () => {
   const { addToast } = useToast();
   const { confirm } = useConfirm();
   const { bookings, loading: contextLoading } = useBooking(); // Use global context
+  const { fetchUnreadCount } = useNotifications();
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,7 @@ const BookingDetailsPage = () => {
       onConfirm: async () => {
         await bookingsApi.cancel(id, "User_Requested");
         addToast("Booking cancelled successfully.", "success");
+        fetchUnreadCount();
         navigate('/bookings');
       }
     });

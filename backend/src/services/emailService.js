@@ -13,6 +13,8 @@ const {
   getBookingCancellationTemplate,
   getReportNotificationTemplate,
   getAccountSuspensionTemplate,
+  getAccountRecoveryTemplate,
+  getBookingReminderTemplate,
 } = require('../utils/emailTemplates');
 
 /**
@@ -44,6 +46,15 @@ initializeSendGrid();
  * @returns {Promise<Object>} Send result
  */
 const sendEmail = async ({ to, subject, html }) => {
+  // Check if target email contains '_test'
+  if (to && to.includes('_test')) {
+    console.log('[EMAIL BLOCKED] Email suppressed for test address:', to);
+    return {
+      success: true,
+      messageId: 'suppressed-test-address',
+      suppressed: true,
+    };
+  }
   // Check if email sending is enabled globally
   if (!isEmailEnabled()) {
     console.log('[EMAIL DISABLED] Email would be sent:', {
@@ -389,6 +400,27 @@ const sendAccountSuspensionEmail = async ({ to, fullName, suspendedUntil, reason
   }
 };
 
+/**
+ * Send account recovery email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @returns {Promise<Object>} Send result
+ */
+const sendAccountRecoveryEmail = async ({ to, fullName }) => {
+  try {
+    const html = getAccountRecoveryTemplate({ fullName });
+
+    return await sendEmail({
+      to,
+      subject: 'Account Restored - İTÜ Study Space Finder',
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending account recovery email:', error);
+  }
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
@@ -399,4 +431,5 @@ module.exports = {
   sendBookingReminderEmail,
   isEmailEnabled,
   sendAccountSuspensionEmail,
+  sendAccountRecoveryEmail,
 };

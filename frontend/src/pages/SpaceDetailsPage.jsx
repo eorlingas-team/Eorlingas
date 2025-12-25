@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { spacesApi } from '../api/spaces';
 import { bookingsApi } from '../api/bookings';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { useToast } from '../contexts/ToastContext';
 import { getTodayIstanbul, getDateRangeIstanbul, createIstanbulDateTime, getIstanbulNow, getIstanbulHourMinute } from '../utils/dateUtils';
 import { addDays, format } from 'date-fns';
@@ -22,6 +23,7 @@ const SpaceDetailsPage = () => {
   const authState = useAuth();
 
   const isAuthenticated = authState?.isAuthenticated;
+  const { fetchUnreadCount } = useNotifications();
 
   const [space, setSpace] = useState(null);
   const [availability, setAvailability] = useState(null);
@@ -228,6 +230,7 @@ const SpaceDetailsPage = () => {
 
       if (response.data.success) {
         addToast(`Booking confirmed! Confirmation number: ${response.data.data.confirmationNumber}`, "success");
+        fetchUnreadCount();
         navigate('/bookings', { state: { forceRefresh: true } });
       }
     } catch (err) {
