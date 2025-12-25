@@ -56,6 +56,16 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    if (user.status === 'Suspended') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Account is suspended',
+        },
+      });
+    }
+
     req.user = {
       userId: user.user_id,
       email: user.email,

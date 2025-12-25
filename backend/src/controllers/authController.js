@@ -365,6 +365,22 @@ const login = async (req, res, next) => {
       },
     });
 
+    let notificationPreferences = {
+      emailNotifications: true,
+      webNotifications: true,
+    };
+
+    if (user.notification_preferences) {
+      try {
+        notificationPreferences =
+          typeof user.notification_preferences === 'string'
+            ? JSON.parse(user.notification_preferences)
+            : user.notification_preferences;
+      } catch (error) {
+        console.error('Error parsing notification preferences:', error);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -380,6 +396,7 @@ const login = async (req, res, next) => {
           studentNumber: user.student_number || user.studentNumber,
           createdAt: user.created_at,
           phoneNumber: user.phone_number,
+          notificationPreferences
         },
       },
     });
@@ -665,6 +682,22 @@ const getMe = async (req, res, next) => {
       });
     }
 
+    let notificationPreferences = {
+      emailNotifications: true,
+      webNotifications: true,
+    };
+
+    if (user.notification_preferences) {
+      try {
+        notificationPreferences =
+          typeof user.notification_preferences === 'string'
+            ? JSON.parse(user.notification_preferences)
+            : user.notification_preferences;
+      } catch (error) {
+        console.error('Error parsing notification preferences:', error);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -678,6 +711,7 @@ const getMe = async (req, res, next) => {
         emailVerified: user.email_verified,
         registrationDate: user.registration_date,
         lastLogin: user.last_login,
+        notificationPreferences
       },
     });
   } catch (error) {

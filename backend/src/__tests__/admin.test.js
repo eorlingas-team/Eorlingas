@@ -13,20 +13,40 @@ const mockClient = {
 
 
 jest.mock('../config/db', () => ({
-  query: jest.fn(),                
-  connect: jest.fn(() => mockClient), 
+  query: jest.fn(),
+  connect: jest.fn(() => mockClient),
 }));
 
-jest.mock('../models/userModel', () => ({ 
+jest.mock('../models/userModel', () => ({
   findById: jest.fn(),
   update: jest.fn()
 }));
+
+jest.mock('../models/bookingModel', () => ({
+  findUpcomingByUserId: jest.fn(),
+  findUpcomingBySpaceIdWithUser: jest.fn(),
+  findByIdWithSpace: jest.fn(),
+  findFutureBySpaceIdWithUser: jest.fn()
+}));
+
 jest.mock('../utils/jwtUtils', () => ({ verifyAccessToken: jest.fn() }));
+
+jest.mock('../services/emailService', () => ({
+  sendAccountSuspensionEmail: jest.fn().mockResolvedValue({}),
+  sendBookingCancellationEmail: jest.fn().mockResolvedValue({}),
+  sendAccountRecoveryEmail: jest.fn().mockResolvedValue({})
+}));
+
+jest.mock('../services/notificationService', () => ({
+  createNotification: jest.fn().mockResolvedValue({})
+}));
 
 describe('Administrative API Tests (Comprehensive)', () => {
   
   beforeEach(() => {
     jest.clearAllMocks();
+    mockClient.query.mockReset();
+    mockClient.release.mockReset();
   });
 
 
@@ -77,9 +97,13 @@ describe('Administrative API Tests (Comprehensive)', () => {
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
 
-    const updatedUser = { user_id: 5, status: 'Suspended' };
+    const updatedUser = { user_id: 5, status: 'Suspended', full_name: 'Test Student', email: 'test@itu.edu.tr' };
     userModel.update.mockResolvedValue(updatedUser);
-    pool.query.mockResolvedValueOnce({ rowCount: 1 }); // Mocking the cancellation of bookings query
+    
+    const bookingModel = require('../models/bookingModel');
+    bookingModel.findUpcomingByUserId.mockResolvedValue([]);
+    
+    pool.query.mockResolvedValue({ rows: [], rowCount: 1 });
 
     const res = await request(app)
       .put('/api/admin/users/5')
@@ -131,18 +155,23 @@ describe('Administrative API Tests (Comprehensive)', () => {
   });
 
   it('should update status to Maintenance', async () => {
-    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' }); // Changed to Administrator because /api/admin/ routes currently require it
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
 
-    // 1. SELECT current space (for updateSpace in spaceController)
-    pool.query.mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Available', building_id: 1, room_number: '101', capacity: 10 }] });
-    // 2. UPDATE Space Status
-    pool.query.mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Maintenance' }] });
-    // 3. Audit log
-    pool.query.mockResolvedValueOnce({ rowCount: 1 });
+    const bookingModel = require('../models/bookingModel');
+    bookingModel.findFutureBySpaceIdWithUser.mockResolvedValue([]);
+
+    // 1. SELECT current space (uses mockClient.query due to transaction)
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Available', building_id: 1, room_number: '101', capacity: 10 }] })
+      .mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Maintenance' }] }) // UPDATE Space Status
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    pool.query.mockResolvedValue({ rowCount: 1 }); // Audit log
 
     const res = await request(app)
-      .put('/api/spaces/1') // Adjusted route to use updateSpace
+      .put('/api/spaces/1')
       .set('Authorization', 'Bearer token')
       .send({
         status: 'Maintenance'
@@ -158,13 +187,19 @@ describe('Administrative API Tests (Comprehensive)', () => {
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
 
-    // 1. UPDATE Space status to 'Deleted'
-    pool.query.mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Deleted' }] });
-    // 2. Audit log
-    pool.query.mockResolvedValueOnce({ rowCount: 1 });
+    const bookingModel = require('../models/bookingModel');
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue([]);
+
+    // deleteSpace uses client.query
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Deleted' }] }) // SELECT/UPDATE Space
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    pool.query.mockResolvedValue({ rowCount: 1 }); // Audit log
 
     const res = await request(app)
-      .delete('/api/spaces/1') // Adjusted route
+      .delete('/api/spaces/1')
       .set('Authorization', 'Bearer token')
       .send({});
     

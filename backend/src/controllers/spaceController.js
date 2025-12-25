@@ -767,7 +767,7 @@ exports.updateSpace = async (req, res) => {
 
   } catch (err) {
     if (client) await client.query('ROLLBACK');
-    console.error(err);
+    console.error('DEBUG UPDATE SPACE ERROR:', err);
     res.status(500).json({ success: false, error: { code: "UPDATE_ERROR", message: err.message } });
   } finally {
     if (client) client.release();
@@ -867,7 +867,7 @@ exports.deleteSpace = async (req, res) => {
 
   } catch (err) {
     if (client) await client.query('ROLLBACK');
-    console.error(err);
+    console.error('DEBUG DELETE SPACE ERROR:', err);
     res.status(500).json({ success: false, error: { code: "DELETE_ERROR", message: err.message } });
   } finally {
     if (client) client.release();

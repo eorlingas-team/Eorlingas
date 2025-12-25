@@ -8,6 +8,7 @@ process.env.JWT_SECRET = 'test_secret_key';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_key';
 process.env.JWT_EXPIRES_IN = '86400';
 process.env.JWT_REFRESH_EXPIRES_IN = '604800';
+process.env.SEND_EMAILS = 'true'; // Disable test mode bypass
 
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -735,7 +736,7 @@ describe('Auth Controller', () => {
     });
 
     it('should verify email successfully with code', async () => {
-      req.body = { email: 'test@itu.edu.tr', code: '123456' };
+      req.body = { email: 'test@itu.edu.tr', code: '654321' }; // Use different code to avoid test mode bypass
 
       const mockUser = {
         user_id: 1,
@@ -756,7 +757,7 @@ describe('Auth Controller', () => {
 
       await authController.verifyEmail(req, res, next);
 
-      expect(userModel.findByEmailAndCode).toHaveBeenCalledWith('test@itu.edu.tr', '123456');
+      expect(userModel.findByEmailAndCode).toHaveBeenCalledWith('test@itu.edu.tr', '654321');
       expect(userModel.update).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
@@ -836,10 +837,11 @@ describe('Auth Controller', () => {
     });
 
     it('should reject expired code', async () => {
-      req.body = { email: 'test@itu.edu.tr', code: '123456' };
+      req.body = { email: 'test@itu.edu.tr', code: '654321' }; // Use different code to avoid test mode bypass
 
       const mockUser = {
         user_id: 1,
+        email: 'test@itu.edu.tr',
         verification_token_expiry: new Date(getIstanbulNow().getTime() - 3600000), // 1 hour ago
       };
 

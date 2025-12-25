@@ -694,7 +694,7 @@ const findActiveAtTime = async (spaceId, timestamp) => {
  * And reminder_sent is FALSE
  * @returns {Array} Array of bookings with user/space details
  */
-const findBookingsNeedingReminder = async () => {
+const findBookingsNeedingReminder = async (intervalMinutes = 70) => {
   try {
     const query = `
       SELECT 
@@ -709,10 +709,10 @@ const findBookingsNeedingReminder = async () => {
       WHERE b.status = 'Confirmed'
         AND b.reminder_sent = FALSE
         AND b.start_time > NOW()
-        AND b.start_time <= (NOW() + interval '70 minutes')
+        AND b.start_time <= (NOW() + (interval '1 minute' * $1))
     `;
 
-    const result = await pool.query(query);
+    const result = await pool.query(query, [intervalMinutes]);
 
     return result.rows.map(row => {
       const booking = formatBooking(row);
