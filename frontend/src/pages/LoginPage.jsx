@@ -53,9 +53,10 @@ const LoginPage = () => {
 
           <form onSubmit={handleLogin} className={`${styles['login-form']}`}>
             <div className={`${styles['form-group']}`}>
-              <label className={`${styles['input-wrapper']}`}>
+              <label htmlFor="email" className={`${styles['input-wrapper']}`}>
                 <p className={`${styles['form-label']}`}>İTÜ Email</p>
                 <input
+                  id="email"
                   type="email"
                   className={`${styles['form-input']}`}
                   placeholder="user@itu.edu.tr"
@@ -69,10 +70,11 @@ const LoginPage = () => {
 
             <div className={`${styles['form-group']}`}>
               <div className={`${styles['form-label']}`}>
-                <span>Password</span>
+                <label htmlFor="password">Password</label>
               </div>
               <div className={`${styles['password-wrapper']}`}>
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   className={`${styles['form-input']}`}
                   placeholder="Enter your password"
