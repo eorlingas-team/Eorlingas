@@ -11,6 +11,7 @@ const {
   getPasswordResetEmailTemplate,
   getBookingConfirmationTemplate,
   getBookingCancellationTemplate,
+  getReportNotificationTemplate,
 } = require('../utils/emailTemplates');
 
 /**
@@ -285,11 +286,84 @@ const sendBookingCancellationEmail = async ({ to, fullName, booking }) => {
   }
 };
 
+/**
+ * Send report notification email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @param {Object} data.booking - Booking object with space details
+ * @param {string} data.defenseToken - Defense token for submitting response
+ * @returns {Promise<Object>} Send result
+ */
+const sendReportNotificationEmail = async ({ to, fullName, booking, defenseToken }) => {
+  try {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const defenseUrl = `${frontendUrl}/report-defense/${defenseToken}`;
+    const startDateTime = formatDateTime(booking.startTime);
+    const endDateTime = formatDateTime(booking.endTime);
+
+    const html = getReportNotificationTemplate({
+      fullName,
+      spaceName: booking.space?.spaceName || 'Study Space',
+      roomNumber: booking.space?.roomNumber || '',
+      buildingName: booking.space?.building?.buildingName || booking.space?.buildingName || '',
+      date: startDateTime.date,
+      startTime: startDateTime.time,
+      endTime: endDateTime.time,
+      defenseUrl,
+    });
+
+    return await sendEmail({
+      to,
+      subject: 'Booking Report Notification - İTÜ Study Space Finder',
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending report notification email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send booking reminder email
+ * @param {Object} data - Email data
+ * @param {string} data.to - Recipient email address
+ * @param {string} data.fullName - User's full name
+ * @param {Object} data.booking - Booking object with space details
+ * @returns {Promise<Object>} Send result
+ */
+const sendBookingReminderEmail = async ({ to, fullName, booking }) => {
+  try {
+    const startDateTime = formatDateTime(booking.startTime);
+    
+    const html = getBookingReminderTemplate({
+      fullName,
+      confirmationNumber: booking.confirmationNumber,
+      spaceName: booking.space.spaceName,
+      roomNumber: booking.space.roomNumber,
+      buildingName: booking.space.building.buildingName,
+      timeRemaining: '1 hour',
+      startTime: startDateTime.time,
+    });
+
+    return await sendEmail({
+      to,
+      subject: `Reminder: Booking in 1 Hour - ${booking.space.spaceName} - İTÜ Study Space Finder`,
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending booking reminder email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendBookingConfirmationEmail,
   sendBookingCancellationEmail,
+  sendReportNotificationEmail,
+  sendBookingReminderEmail,
   isEmailEnabled,
 };

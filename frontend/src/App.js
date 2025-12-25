@@ -13,10 +13,13 @@ import SpaceDetailsPage from './pages/SpaceDetailsPage';
 import MyBookingsPage from './pages/MyBookingsPage';
 import BookingDetailsPage from './pages/BookingDetailsPage';
 import ProfilePage from './pages/ProfilePage';
+import ReportPage from './pages/ReportPage';
+import ReportDefensePage from './pages/ReportDefensePage';
 
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagementPage from './pages/UserManagementPage';
 import AuditLogsPage from './pages/AuditLogsPage';
+import ReportsManagementPage from './pages/ReportsManagementPage';
 import SpaceManagerDashboard from './pages/SpaceManagerDashboard';
 import CreateSpacePage from './pages/CreateSpacePage';
 import EditSpacePage from './pages/EditSpacePage';
@@ -43,6 +46,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/spaces/:id" element={<SpaceDetailsPage />} />
+        <Route path="/report-defense/:token" element={<ReportDefensePage />} />
 
         {/* --- Student / Authenticated Routes --- */}
         <Route path="/bookings" element={
@@ -60,6 +64,11 @@ function App() {
             <ProfilePage />
           </ProtectedRoute>
         } />
+        <Route path="/report" element={
+          <ProtectedRoute allowedRoles={['Student']}>
+            <ReportPage />
+          </ProtectedRoute>
+        } />
 
         {/* --- Admin Routes --- */}
         <Route path="/admin" element={
@@ -70,6 +79,11 @@ function App() {
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={['Administrator']}>
             <UserManagementPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/reports" element={
+          <ProtectedRoute allowedRoles={['Administrator']}>
+            <ReportsManagementPage />
           </ProtectedRoute>
         } />
         <Route path="/admin/audit-logs" element={

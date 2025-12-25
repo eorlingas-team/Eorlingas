@@ -59,12 +59,12 @@ const StickyBookingPanel = ({
                         <div className={styles['time-display']}>
                             <div className={styles['time-badge']}>
                                 <span className="material-symbols-outlined">schedule</span>
-                                {selection.start}
+                                {selection.start?.replace(/^24:/, '00:')}
                             </div>
                             <span className={styles['time-separator']}>→</span>
                             <div className={styles['time-badge']}>
                                 <span className="material-symbols-outlined">schedule</span>
-                                {selection.end}
+                                {selection.end?.replace(/^24:/, '00:')}
                             </div>
                         </div>
                         <div className={styles['duration-badge']}>

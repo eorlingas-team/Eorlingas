@@ -10,6 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================
 
 -- Drop tables if they exist to start fresh
+DROP TABLE IF EXISTS booking_reports CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS bookings CASCADE;
@@ -19,6 +20,7 @@ DROP TABLE IF EXISTS campuses CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- Drop types if they exist (optional, for full reset)
+DROP TYPE IF EXISTS report_status CASCADE;
 DROP TYPE IF EXISTS audit_action_type CASCADE;
 DROP TYPE IF EXISTS notification_status CASCADE;
 DROP TYPE IF EXISTS notification_type CASCADE;
@@ -58,6 +60,7 @@ CREATE TYPE notification_type AS ENUM (
 CREATE TYPE notification_status AS ENUM ('Pending', 'Sent', 'Failed', 'Retry_Queued');
 
 CREATE TYPE audit_action_type AS ENUM (
+    'User_Registered',
     'Login_Success',
     'Login_Failed',
     'Logout',
@@ -71,6 +74,8 @@ CREATE TYPE audit_action_type AS ENUM (
     'Account_Suspended',
     'Password_Reset'
 );
+
+CREATE TYPE report_status AS ENUM ('Pending', 'Reviewed');
 
 -- ==========================================
 -- 3. TABLES
@@ -95,6 +100,7 @@ CREATE TABLE users (
     password_reset_token VARCHAR(255),
     password_reset_token_expiry TIMESTAMP WITH TIME ZONE,
     refresh_token TEXT, -- Current active refresh token
+    suspended_until TIMESTAMP WITH TIME ZONE, -- Suspension expiry date
     registration_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_login        TIMESTAMP WITH TIME ZONE,
 
@@ -171,9 +177,6 @@ CREATE TABLE study_spaces (
     operating_hours_weekend_start TIME,
     operating_hours_weekend_end   TIME,
 
-    maintenance_start_date TIMESTAMP WITH TIME ZONE,
-    maintenance_end_date   TIMESTAMP WITH TIME ZONE,
-
     -- Soft delete metadata (for Use Case 8c)
     deleted_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     deleted_at TIMESTAMP WITH TIME ZONE,
@@ -187,17 +190,7 @@ CREATE TABLE study_spaces (
         CHECK (capacity >= 1 AND capacity <= 100),
 
     CONSTRAINT unique_room_in_building
-        UNIQUE (building_id, room_number),
-
-    -- Maintenance status must have valid dates
-    CONSTRAINT check_maintenance_dates CHECK (
-        (status <> 'Maintenance')
-        OR (
-            maintenance_start_date IS NOT NULL
-            AND maintenance_end_date   IS NOT NULL
-            AND maintenance_end_date > maintenance_start_date
-        )
-    )
+        UNIQUE (building_id, room_number)
 );
 
 -- BOOKINGS TABLE
@@ -221,6 +214,7 @@ CREATE TABLE bookings (
         (EXTRACT(EPOCH FROM (end_time - start_time)) / 60)::INT
     ) STORED,
 
+    attendee_count      INTEGER NOT NULL DEFAULT 1,
     purpose             TEXT,
     cancellation_reason booking_cancellation_reason,
     cancelled_at        TIMESTAMP WITH TIME ZONE,
@@ -234,6 +228,14 @@ CREATE TABLE bookings (
     CONSTRAINT check_booking_duration CHECK (
         (EXTRACT(EPOCH FROM (end_time - start_time)) / 60)
             BETWEEN 60 AND 180
+    ),
+
+    -- Attendee count must be at least 1
+
+    CONSTRAINT check_attendee_count CHECK (
+
+        attendee_count >= 1
+
     )
 );
 
@@ -295,6 +297,41 @@ CREATE TABLE audit_logs (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- BOOKING REPORTS TABLE
+CREATE TABLE booking_reports (
+    report_id SERIAL PRIMARY KEY,
+
+    booking_id INTEGER NOT NULL
+        REFERENCES bookings(booking_id) ON DELETE CASCADE,
+
+    reporter_user_id INTEGER NOT NULL
+        REFERENCES users(user_id) ON DELETE CASCADE,
+
+    reported_user_id INTEGER NOT NULL
+        REFERENCES users(user_id) ON DELETE CASCADE,
+
+    space_id INTEGER NOT NULL
+        REFERENCES study_spaces(space_id) ON DELETE CASCADE,
+
+    message TEXT NOT NULL,
+    status report_status NOT NULL DEFAULT 'Pending',
+
+    -- Defense
+    defense_token VARCHAR(255),
+    defense_message TEXT,
+    defense_submitted_at TIMESTAMP WITH TIME ZONE,
+
+    -- Admin review
+    reviewed_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    admin_notes TEXT,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    -- Reporter cannot report themselves
+    CONSTRAINT check_not_self_report CHECK (reported_user_id != reporter_user_id)
+);
+
 -- ==========================================
 -- 4. INDEXES (Performance)
 -- ==========================================
@@ -338,6 +375,23 @@ CREATE INDEX idx_notifications_pending
 -- Optional: retry count index
 CREATE INDEX idx_notifications_retry_count
     ON notifications (retry_count);
+
+-- Booking reports: status-based queries
+CREATE INDEX idx_booking_reports_status
+    ON booking_reports (status);
+
+-- Booking reports: reported user lookups
+CREATE INDEX idx_booking_reports_reported_user
+    ON booking_reports (reported_user_id);
+
+-- Booking reports: reporter user lookups
+CREATE INDEX idx_booking_reports_reporter
+    ON booking_reports (reporter_user_id);
+
+-- Booking reports: defense token lookups
+CREATE INDEX idx_booking_reports_defense_token
+    ON booking_reports (defense_token)
+    WHERE defense_token IS NOT NULL;
 
 -- ==========================================
 -- 5. FUNCTION & TRIGGERS FOR updated_at

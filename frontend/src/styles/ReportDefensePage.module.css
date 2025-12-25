@@ -1,0 +1,235 @@
+.defense-container {
+  min-height: 100vh;
+  background: var(--background-main);
+  color: var(--text-primary);
+}
+
+.defense-main {
+  padding: 24px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.report-info {
+  background: var(--background-card);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border-main);
+}
+
+.report-info h3 {
+  margin: 0 0 16px 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.warning-box {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--status-orange) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-orange) 30%, transparent);
+  border-radius: 8px;
+}
+
+.warning-box .material-symbols-outlined {
+  color: var(--status-orange);
+  flex-shrink: 0;
+}
+
+.warning-box p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.defense-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--background-card);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-main);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group textarea {
+  padding: 12px;
+  font-size: 0.9375rem;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--background-main);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 120px;
+  transition: border-color 0.2s ease;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.char-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.submit-btn {
+  padding: 14px 24px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error-card,
+.success-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px;
+  background: var(--background-card);
+  border-radius: 12px;
+  border: 1px solid var(--border-main);
+}
+
+.error-card .material-symbols-outlined {
+  font-size: 64px;
+  color: var(--status-red);
+  margin-bottom: 16px;
+}
+
+.success-card .material-symbols-outlined {
+  font-size: 64px;
+  color: var(--status-green);
+  margin-bottom: 16px;
+}
+
+.error-card h2,
+.success-card h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+}
+
+.error-card p,
+.success-card p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.home-btn {
+  margin-top: 24px;
+  padding: 12px 24px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: white;
+  cursor: pointer;
+}
+
+.submitted-defense {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--background-main);
+  border-radius: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.submitted-defense h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.submitted-defense p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .defense-main {
+    padding: 16px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .defense-form {
+    padding: 16px;
+  }
+}

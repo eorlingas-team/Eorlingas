@@ -858,12 +858,14 @@ exports.getFilterOptions = async (req, res) => {
   try {
     const campusesQuery = 'SELECT campus_id, campus_name FROM campuses ORDER BY campus_name';
     const buildingsQuery = 'SELECT building_id, building_name, campus_id FROM buildings ORDER BY building_name';
+    const spacesQuery = "SELECT space_id, space_name, room_number, building_id FROM study_spaces WHERE status != 'Deleted' ORDER BY space_name";
     const roomTypesQuery = 'SELECT DISTINCT room_type FROM study_spaces WHERE status != \'Deleted\' AND room_type IS NOT NULL';
     const noiseLevelsQuery = 'SELECT DISTINCT noise_level FROM study_spaces WHERE status != \'Deleted\' AND noise_level IS NOT NULL';
 
-    const [campusesRes, buildingsRes, roomTypesRes, noiseLevelsRes] = await Promise.all([
+    const [campusesRes, buildingsRes, spacesRes, roomTypesRes, noiseLevelsRes] = await Promise.all([
       pool.query(campusesQuery),
       pool.query(buildingsQuery),
+      pool.query(spacesQuery),
       pool.query(roomTypesQuery),
       pool.query(noiseLevelsQuery)
     ]);
@@ -873,6 +875,7 @@ exports.getFilterOptions = async (req, res) => {
       data: {
         campuses: campusesRes.rows,
         buildings: buildingsRes.rows,
+        spaces: spacesRes.rows,
         roomTypes: roomTypesRes.rows.map(r => r.room_type),
         noiseLevels: noiseLevelsRes.rows.map(r => r.noise_level)
       }
