@@ -7,7 +7,7 @@ import styles from '../styles/BookingDetailsPage.module.css';
 import Header from '../components/Header';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { formatDate, formatTime, formatDateTime } from '../utils/dateUtils';
+import { formatDate, formatTime, formatDateTime, getIstanbulNow } from '../utils/dateUtils';
 import LocationMap from '../components/Map/LocationMap';
 
 const BookingDetailsPage = () => {
@@ -56,6 +56,17 @@ const BookingDetailsPage = () => {
   }, [id, bookings, contextLoading]);
 
   const handleCancel = async () => {
+    if (!booking) return;
+
+    const startTime = new Date(booking.startTime);
+    const now = getIstanbulNow();
+    const diffMinutes = (startTime - now) / (1000 * 60);
+
+    if (diffMinutes <= 15) {
+      addToast("You can only cancel your booking up to 15 minutes before the start time.", "error");
+      return;
+    }
+
     await confirm({
       title: "Cancel Booking",
       message: "Are you sure you want to cancel this booking?",

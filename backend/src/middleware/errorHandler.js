@@ -20,10 +20,10 @@ const errorHandler = (err, req, res, next) => {
     statusCode = 401;
     errorCode = 'UNAUTHORIZED';
     message = 'Token expired';
-  } else if (err.code === '23505') {
+  } else if (err.code === '23505' || err.code === '23P01') {
     statusCode = 409;
-    errorCode = 'DUPLICATE_ENTRY';
-    message = 'Resource already exists';
+    errorCode = 'CONFLICT';
+    message = 'Resource already exists or conflicts with existing data';
   } else if (err.code === '23503') {
     statusCode = 400;
     errorCode = 'INVALID_REFERENCE';

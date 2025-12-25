@@ -57,10 +57,10 @@ const DataTable = ({
     const [currentPage, setCurrentPage] = useState(1);
     const [currentLimit, setCurrentLimit] = useState(itemsPerPage);
 
-    // Reset page when search or filters change to avoid empty pages
+    // Reset page when search, filters, or sort changes to avoid empty pages
     React.useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, localFilters, currentLimit, data.length]);
+    }, [searchTerm, localFilters, currentLimit, data.length, sortConfig]);
 
     // Data is filtered from parent if clientSide is used for rendering
     const filteredData = data;
@@ -405,24 +405,33 @@ const DataTable = ({
 
                             <div style={{ display: 'flex', gap: '4px' }}>
                                 {/* Simple pagination: show current, prev, next, first, last layout */}
-                                {Array.from({ length: Math.min(5, paginationInfo.totalPages) }, (_, i) => {
-                                    let pageNum = paginationInfo.current - 2 + i;
-                                    if (paginationInfo.current < 3) pageNum = i + 1;
-                                    if (paginationInfo.current > paginationInfo.totalPages - 2) pageNum = paginationInfo.totalPages - 4 + i;
+                                {(() => {
+                                    const totalPages = paginationInfo.totalPages;
+                                    const current = paginationInfo.current;
+                                    const maxVisible = 5;
 
-                                    if (pageNum < 1) pageNum = i + 1;
-                                    if (pageNum > paginationInfo.totalPages) return null;
+                                    let startPage = Math.max(1, current - Math.floor(maxVisible / 2));
+                                    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
 
-                                    return (
+                                    if (endPage - startPage + 1 < maxVisible) {
+                                        startPage = Math.max(1, endPage - maxVisible + 1);
+                                    }
+
+                                    const pages = [];
+                                    for (let i = startPage; i <= endPage; i++) {
+                                        pages.push(i);
+                                    }
+
+                                    return pages.map(pageNum => (
                                         <button
                                             key={pageNum}
-                                            className={`${styles['page-nav-btn']} ${pageNum === paginationInfo.current ? styles.active : ''}`}
+                                            className={`${styles['page-nav-btn']} ${pageNum === current ? styles.active : ''}`}
                                             onClick={() => paginationInfo.onPageChange(pageNum)}
                                         >
                                             {pageNum}
                                         </button>
-                                    );
-                                })}
+                                    ));
+                                })()}
                             </div>
 
                             <button

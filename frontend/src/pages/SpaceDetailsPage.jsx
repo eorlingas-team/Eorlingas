@@ -4,8 +4,9 @@ import { spacesApi } from '../api/spaces';
 import { bookingsApi } from '../api/bookings';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { getTodayIstanbul, getDateRangeIstanbul, createIstanbulDateTime, getIstanbulNow } from '../utils/dateUtils';
+import { getTodayIstanbul, getDateRangeIstanbul, createIstanbulDateTime, getIstanbulNow, getIstanbulHourMinute } from '../utils/dateUtils';
 import { addDays, format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import styles from '../styles/SpaceDetailsPage.module.css';
 import Header from '../components/Header';
 import TimeSlotGrid from '../components/TimeSlotGrid';
@@ -136,7 +137,13 @@ const SpaceDetailsPage = () => {
     const checkTimeCutoff = () => {
       const now = getIstanbulNow();
       const todayStr = getTodayIstanbul();
-      const dayOfWeek = now.getDay(); // 0 = Sun, 6 = Sat
+      const { hour: currentHour, minute: currentMinute } = getIstanbulHourMinute(now);
+
+      const day = new Date(now);
+      // We need the Istanbul day of week for operating hours check
+      // (Day might be different if it's after midnight in Istanbul but not in UTC)
+      // Actually, getTodayIstanbul() is already reliable.
+      const dayOfWeek = toZonedTime(now, 'Europe/Istanbul').getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
       const hours = isWeekend ? operatingHours?.weekend : operatingHours?.weekday;
@@ -147,13 +154,11 @@ const SpaceDetailsPage = () => {
         shouldSkipToday = true;
       } else {
         const [endHour, endMinute] = hours.end.split(':').map(Number);
-        const closingTime = new Date(now);
-        closingTime.setHours(endHour, endMinute, 0, 0);
 
-        const diffMs = closingTime - now;
-        const oneHourMs = 60 * 60 * 1000;
+        const currentTotalMinutes = currentHour * 60 + currentMinute;
+        const closingTotalMinutes = endHour * 60 + endMinute;
 
-        if (diffMs < oneHourMs) {
+        if (closingTotalMinutes - currentTotalMinutes < 60) {
           shouldSkipToday = true;
         }
       }

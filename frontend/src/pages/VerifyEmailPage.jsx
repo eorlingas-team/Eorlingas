@@ -199,15 +199,15 @@ const VerifyEmailPage = () => {
 
           <div className={`${styles['resend-container']}`}>
             {timer > 0 ? (
-              <p className={`${styles['resend-text']}`}>
+              <div className={`${styles['resend-text']}`}>
                 Resend code in <span className={`${styles['timer-text']}`}>{timer}s</span>
-              </p>
+              </div>
             ) : (
-              <p className={`${styles['resend-text']}`}>
+              <div className={`${styles['resend-text']}`}>
                 Didn't receive the email? <span className={`${styles['resend-link']} ${resendLoading ? styles.disabled : ''}`} onClick={handleResend}>
                   {resendLoading ? <LoadingSpinner size="sm" variant="primary" className={styles['inline-spinner']} /> : 'Resend Code'}
                 </span>
-              </p>
+              </div>
             )}
           </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import styles from '../styles/TimeSlotGrid.module.css';
-import { getTodayIstanbul, getIstanbulNow } from '../utils/dateUtils';
+import { getTodayIstanbul, getIstanbulNow, getIstanbulHourMinute } from '../utils/dateUtils';
 import { format } from 'date-fns';
 
 const SLOT_HEIGHT = 24; // pixels per 15-minute slot
@@ -55,6 +55,7 @@ const TimeSlotGrid = ({
     const timeToMinutes = (timeStr) => {
         if (!timeStr) return 0;
         const [h, m] = timeStr.split(':').map(Number);
+        if (h === 23 && m === 59) return 1440;
         return h * 60 + (m || 0);
     };
 
@@ -73,7 +74,8 @@ const TimeSlotGrid = ({
 
         // Current time in Istanbul timezone
         const istanbulNow = getIstanbulNow();
-        const currentTurkeyMinutes = istanbulNow.getHours() * 60 + istanbulNow.getMinutes();
+        const { hour, minute } = getIstanbulHourMinute(istanbulNow);
+        const currentTurkeyMinutes = hour * 60 + minute;
 
         // Today's date in Istanbul timezone
         const todayStr = getTodayIstanbul();

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSpaceManager } from '../contexts/SpaceManagerContext';
 import { useToast } from '../contexts/ToastContext';
 import Header from '../components/Header';
+import LoadingSpinner from '../components/LoadingSpinner';
 import styles from '../styles/EditSpacePage.module.css';
 
 const EditSpacePage = () => {
@@ -15,6 +16,7 @@ const EditSpacePage = () => {
   const { addToast } = useToast();
   const { spaces, meta, actions } = useSpaceManager();
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   const [newFeatureInput, setNewFeatureInput] = useState("");
   const [availableFeatures, setAvailableFeatures] = useState([
@@ -43,9 +45,7 @@ const EditSpacePage = () => {
     roomNumber: space.roomNumber,
     floor: space.floor,
     roomType: space.roomType,
-    accessibilityFeatures: space.accessibilityFeatures || [],
-    maintenanceStartDate: space.maintenanceStartDate ? space.maintenanceStartDate.split('T')[0] : '',
-    maintenanceEndDate: space.maintenanceEndDate ? space.maintenanceEndDate.split('T')[0] : ''
+    accessibilityFeatures: space.accessibilityFeatures || []
   });
 
   const [formData, setFormData] = useState(() => {
@@ -68,9 +68,7 @@ const EditSpacePage = () => {
       roomNumber: '',
       floor: 0,
       roomType: 'Group_Study',
-      accessibilityFeatures: [],
-      maintenanceStartDate: '',
-      maintenanceEndDate: ''
+      accessibilityFeatures: []
     };
   });
 
@@ -127,6 +125,9 @@ const EditSpacePage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
+
+    setSubmitting(true);
     try {
       const payload = {
         spaceName: formData.name,
@@ -139,15 +140,8 @@ const EditSpacePage = () => {
         roomNumber: formData.roomNumber,
         floor: formData.floor,
         roomType: formData.roomType,
-        accessibilityFeatures: formData.accessibilityFeatures,
-        maintenanceStartDate: formData.status === 'Maintenance' ? formData.maintenanceStartDate : null,
-        maintenanceEndDate: formData.status === 'Maintenance' ? formData.maintenanceEndDate : null
+        accessibilityFeatures: formData.accessibilityFeatures
       };
-
-      if (formData.status === 'Maintenance' && (!formData.maintenanceStartDate || !formData.maintenanceEndDate)) {
-        addToast("Please provide both start and end dates for Maintenance status.", "warning");
-        return;
-      }
 
       const result = await actions.updateSpace(id, payload);
 
@@ -162,9 +156,6 @@ const EditSpacePage = () => {
         } else if (error?.code === 'VALIDATION_ERROR' && error.message.includes('Capacity')) {
           setErrors({ capacity: true });
           addToast(error.message, "error");
-        } else if (error?.code === 'MAINTENANCE_DATE_ERROR') {
-          setErrors({ maintenanceStartDate: true, maintenanceEndDate: true });
-          addToast(error.message, "error");
         } else {
           addToast("Failed to update space: " + (error?.message || error || "Unknown error"), "error");
         }
@@ -172,6 +163,8 @@ const EditSpacePage = () => {
     } catch (err) {
       console.error("Update Error:", err);
       addToast("Failed to update space.", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -307,7 +300,6 @@ const EditSpacePage = () => {
                 >
                   <option value="Available">Available</option>
                   <option value="Maintenance">Maintenance</option>
-                  <option value="Occupied">Occupied</option>
                 </select>
               </div>
 
@@ -356,46 +348,6 @@ const EditSpacePage = () => {
                 </select>
               </div>
             </div>
-
-            {formData.status === 'Maintenance' && (
-              <div className={`${styles['form-row']} ${styles['animation-fade-in']}`} style={{
-                padding: '16px',
-                borderRadius: '8px',
-                backgroundColor: 'color-mix(in srgb, var(--error-color) 5%, transparent)',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '16px',
-                border: '1px solid color-mix(in srgb, var(--error-color) 20%, transparent)',
-                marginBottom: '8px'
-              }}>
-                <div className={`${styles['form-group']}`}>
-                  <label className={`${styles['form-label']}`} style={{ color: 'var(--error-color)' }}>Maintenance Start Date</label>
-                  <input
-                    type="date"
-                    className={`${styles['form-input']} ${errors.maintenanceStartDate ? styles.error : ''}`}
-                    value={formData.maintenanceStartDate}
-                    onChange={(e) => {
-                      setFormData({ ...formData, maintenanceStartDate: e.target.value });
-                      if (errors.maintenanceStartDate) setErrors(prev => ({ ...prev, maintenanceStartDate: false }));
-                    }}
-                    required
-                  />
-                </div>
-                <div className={`${styles['form-group']}`}>
-                  <label className={`${styles['form-label']}`} style={{ color: 'var(--error-color)' }}>Maintenance End Date</label>
-                  <input
-                    type="date"
-                    className={`${styles['form-input']} ${errors.maintenanceEndDate ? styles.error : ''}`}
-                    value={formData.maintenanceEndDate}
-                    onChange={(e) => {
-                      setFormData({ ...formData, maintenanceEndDate: e.target.value });
-                      if (errors.maintenanceEndDate) setErrors(prev => ({ ...prev, maintenanceEndDate: false }));
-                    }}
-                    required
-                  />
-                </div>
-              </div>
-            )}
 
             <div className={`${styles['form-group']}`}>
               <label className={`${styles['form-label']}`}>Amenities</label>
@@ -519,8 +471,12 @@ const EditSpacePage = () => {
               >
                 Discard
               </button>
-              <button type="submit" className={`${styles['btn-save']}`}>
-                Save
+              <button
+                type="submit"
+                className={`${styles['btn-save']}`}
+                disabled={submitting}
+              >
+                {submitting ? <LoadingSpinner size="sm" color="white" /> : 'Save'}
               </button>
             </div>
 

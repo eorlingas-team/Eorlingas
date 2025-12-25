@@ -13,7 +13,7 @@ export const useSpaces = () => {
 
 export const SpacesProvider = ({ children }) => {
     // Data State
-    const [allSpaces, setAllSpaces] = useState([]); 
+    const [rawAllSpaces, setRawAllSpaces] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -76,12 +76,12 @@ export const SpacesProvider = ({ children }) => {
                 });
 
                 if (response.data.success) {
-                    setAllSpaces(response.data.data.spaces);
+                    setRawAllSpaces(response.data.data.spaces);
                 }
             } catch (err) {
                 console.error("API Error:", err);
                 setError("Failed to load spaces.");
-                setAllSpaces([]);
+                setRawAllSpaces([]);
             } finally {
                 setLoading(false);
                 setIsInitialized(true);
@@ -93,9 +93,15 @@ export const SpacesProvider = ({ children }) => {
         }
     }, [isInitialized]);
 
+    const globalMaxCapacity = useMemo(() => {
+        if (rawAllSpaces.length === 0) return 200;
+        const max = Math.max(...rawAllSpaces.map(s => s.capacity || 0));
+        return Math.max(25, Math.ceil(max / 25) * 25);
+    }, [rawAllSpaces]);
+
     // Client-side filtering
     const filteredSpaces = useMemo(() => {
-        let result = [...allSpaces];
+        let result = [...rawAllSpaces];
 
         // Search filter
         if (debouncedSearchTerm) {
@@ -142,7 +148,7 @@ export const SpacesProvider = ({ children }) => {
         }
 
         return result;
-    }, [allSpaces, debouncedSearchTerm, filters]);
+    }, [rawAllSpaces, debouncedSearchTerm, filters]);
 
     // Client-side pagination
     const paginatedSpaces = useMemo(() => {
@@ -183,7 +189,7 @@ export const SpacesProvider = ({ children }) => {
             });
 
             if (response.data.success) {
-                setAllSpaces(response.data.data.spaces);
+                setRawAllSpaces(response.data.data.spaces);
             }
         } catch (err) {
             console.error("API Error:", err);
@@ -196,6 +202,7 @@ export const SpacesProvider = ({ children }) => {
     const value = useMemo(() => ({
         spaces: paginatedSpaces,
         allSpaces: filteredSpaces, // For map view - all filtered spaces
+        globalMaxCapacity,
         loading,
         loadingAll: false,
         error,
@@ -210,7 +217,7 @@ export const SpacesProvider = ({ children }) => {
             changePage,
             refresh
         }
-    }), [paginatedSpaces, filteredSpaces, loading, error, paginationInfo, currentPage, filters, searchTerm, meta, updateFilters, updateSearchTerm, changePage, refresh]);
+    }), [paginatedSpaces, filteredSpaces, globalMaxCapacity, loading, error, paginationInfo, currentPage, filters, searchTerm, meta, updateFilters, updateSearchTerm, changePage, refresh]);
 
     return (
         <SpacesContext.Provider value={value}>

@@ -54,11 +54,11 @@ const findByUserId = async (userId, filters = {}) => {
     let paramIndex = 2;
 
     if (filters.type === 'upcoming') {
-      // Upcoming: booking starts in future OR started less than 15 minutes ago
-      query += ` AND (start_time + INTERVAL '15 minutes') > NOW() AND status = 'Confirmed'`;
+      // Upcoming: booking starts in future
+      query += ` AND start_time > NOW() AND status = 'Confirmed'`;
     } else if (filters.type === 'past') {
-      // Past: 15 minutes after start time has passed
-      query += ` AND (start_time + INTERVAL '15 minutes') <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
+      // Past: start time has passed
+      query += ` AND start_time <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
     } else if (filters.type === 'cancelled') {
       query += ` AND status = 'Cancelled'`;
     }
@@ -103,11 +103,11 @@ const countByUserId = async (userId, filters = {}) => {
     let paramIndex = 2;
 
     if (filters.type === 'upcoming') {
-      // Upcoming: booking starts in future OR started less than 15 minutes ago
-      query += ` AND (start_time + INTERVAL '15 minutes') > NOW() AND status = 'Confirmed'`;
+      // Upcoming: booking starts in future
+      query += ` AND start_time > NOW() AND status = 'Confirmed'`;
     } else if (filters.type === 'past') {
-      // Past: 15 minutes after start time has passed
-      query += ` AND (start_time + INTERVAL '15 minutes') <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
+      // Past: start time has passed
+      query += ` AND start_time <= NOW() AND status IN ('Confirmed', 'Completed', 'No_Show')`;
     } else if (filters.type === 'cancelled') {
       query += ` AND status = 'Cancelled'`;
     }
@@ -211,7 +211,7 @@ const countActiveBookings = async (userId) => {
       `SELECT COUNT(*) FROM bookings
        WHERE user_id = $1
          AND status = 'Confirmed'
-         AND (start_time + INTERVAL '15 minutes') > NOW()`,
+         AND start_time > NOW()`,
       [userId]
     );
     return parseInt(result.rows[0].count, 10);
@@ -422,11 +422,11 @@ const findByUserIdWithSpace = async (userId, filters = {}) => {
     let paramIndex = 2;
 
     if (filters.type === 'upcoming') {
-      // Upcoming: booking starts in future OR started less than 15 minutes ago
-      query += ` AND (b.start_time + INTERVAL '15 minutes') > NOW() AND b.status = 'Confirmed'`;
+      // Upcoming: booking starts in future
+      query += ` AND b.start_time > NOW() AND b.status = 'Confirmed'`;
     } else if (filters.type === 'past') {
-      // Past: 15 minutes after start time has passed
-      query += ` AND (b.start_time + INTERVAL '15 minutes') <= NOW() AND b.status IN ('Confirmed', 'Completed', 'No_Show')`;
+      // Past: start time has passed
+      query += ` AND b.start_time <= NOW() AND b.status IN ('Confirmed', 'Completed', 'No_Show')`;
     } else if (filters.type === 'cancelled') {
       query += ` AND b.status = 'Cancelled'`;
     }
@@ -495,6 +495,124 @@ const findByUserIdWithSpace = async (userId, filters = {}) => {
   }
 };
 
+/**
+ * Find upcoming confirmed bookings for a space with user details
+ * @param {number} spaceId
+ * @param {Object} [transaction] - Database transaction client
+ * @returns {Array} Array of bookings with user details
+ */
+const findUpcomingBySpaceIdWithUser = async (spaceId, transaction = null) => {
+  try {
+    const query = `
+      SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences, u.email_verified
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      WHERE b.space_id = $1 
+        AND b.status = 'Confirmed'
+        AND b.start_time > NOW()
+      ORDER BY b.start_time ASC
+    `;
+    const client = transaction || pool;
+    const result = await client.query(query, [spaceId]);
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.user = {
+        email: row.email,
+        fullName: row.full_name,
+        notificationPreferences: row.notification_preferences,
+        emailVerified: row.email_verified
+      };
+      return booking;
+    });
+  } catch (error) {
+    console.error('Error finding upcoming bookings by space ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find confirmed bookings for a space that overlap with a given time range, including user details
+ * @param {number} spaceId
+ * @param {Date} startTime
+ * @param {Date} endTime
+ * @param {Object} [transaction] - Database transaction client
+ * @returns {Array} Array of bookings with user details
+ */
+const findOverlappingBySpaceIdWithUser = async (spaceId, startTime, endTime, transaction = null) => {
+  try {
+    const query = `
+      SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences, u.email_verified
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      WHERE b.space_id = $1 
+        AND b.status = 'Confirmed'
+        AND (b.start_time < $3 AND b.end_time > $2)
+      ORDER BY b.start_time ASC
+    `;
+    const client = transaction || pool;
+    const result = await client.query(query, [spaceId, startTime, endTime]);
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.user = {
+        email: row.email,
+        fullName: row.full_name,
+        notificationPreferences: row.notification_preferences,
+        emailVerified: row.email_verified
+      };
+      return booking;
+    });
+  } catch (error) {
+    console.error('Error finding overlapping bookings by space ID:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find future confirmed bookings for a space starting from a given time, including user details
+ * @param {number} spaceId
+ * @param {Date} fromTime - Start time to search from
+ * @param {Object} [transaction] - Database transaction client
+ * @returns {Array} Array of bookings with user details
+ */
+const findFutureBySpaceIdWithUser = async (spaceId, fromTime, transaction = null) => {
+  try {
+    const query = `
+      SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences, u.email_verified
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      WHERE b.space_id = $1 
+        AND b.status = 'Confirmed'
+        AND b.start_time > $2
+      ORDER BY b.start_time ASC
+    `;
+    const client = transaction || pool;
+    const result = await client.query(query, [spaceId, fromTime]);
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.user = {
+        email: row.email,
+        fullName: row.full_name,
+        notificationPreferences: row.notification_preferences,
+        emailVerified: row.email_verified
+      };
+      return booking;
+    });
+  } catch (error) {
+    console.error('Error finding future bookings by space ID:', error);
+    throw error;
+  }
+};
+
+
 module.exports = {
   findById,
   findByUserId,
@@ -507,4 +625,7 @@ module.exports = {
   confirmationNumberExists,
   findByIdWithSpace,
   findByUserIdWithSpace,
+  findUpcomingBySpaceIdWithUser,
+  findOverlappingBySpaceIdWithUser,
+  findFutureBySpaceIdWithUser,
 };

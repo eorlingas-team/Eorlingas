@@ -1,10 +1,11 @@
 /**
  * Email Service
- * Handles sending emails via Nodemailer (Gmail SMTP)
+ * Handles sending emails via SendGrid API
  */
 
 require('dotenv').config();
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
+const pool = require('../config/db');
 const {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
@@ -21,48 +22,19 @@ const isEmailEnabled = () => {
 };
 
 /**
- * Create and configure email transporter
- * @returns {Object} Nodemailer transporter
+ * Initialize SendGrid API key
  */
-const createTransporter = () => {
-  if (process.env.NODE_ENV === 'test') {
-    return {
-      sendMail: async (mailOptions) => {
-        console.log('[TEST MODE] Email would be sent:', {
-          to: mailOptions.to,
-          subject: mailOptions.subject,
-        });
-        return {
-          messageId: 'test-message-id',
-          accepted: [mailOptions.to],
-          rejected: [],
-        };
-      },
-    };
+const initializeSendGrid = () => {
+  if (process.env.NODE_ENV !== 'test' && process.env.SENDGRID_API_KEY) {
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
   }
-
-  const port = parseInt(process.env.EMAIL_PORT || '587', 10);
-  const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
-
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: port,
-    secure: secure,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000,
-  });
 };
 
+// Initialize on module load
+initializeSendGrid();
+
 /**
- * Send email using transporter
+ * Send email using SendGrid API
  * @param {Object} options - Email options
  * @param {string} options.to - Recipient email address
  * @param {string} options.subject - Email subject
@@ -70,7 +42,7 @@ const createTransporter = () => {
  * @returns {Promise<Object>} Send result
  */
 const sendEmail = async ({ to, subject, html }) => {
-  // Check if email sending is disabled
+  // Check if email sending is enabled globally
   if (!isEmailEnabled()) {
     console.log('[EMAIL DISABLED] Email would be sent:', {
       to: to,
@@ -83,38 +55,76 @@ const sendEmail = async ({ to, subject, html }) => {
     };
   }
 
+  // Check user notification preferences
   try {
-    if (process.env.NODE_ENV !== 'test') {
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        console.error('Email configuration missing. EMAIL_USER and EMAIL_PASS must be set.');
-        throw new Error('Email service not configured');
+    const userResult = await pool.query(
+      'SELECT notification_preferences FROM users WHERE email = $1',
+      [to.toLowerCase()]
+    );
+    
+    if (userResult.rows.length > 0) {
+      const prefs = userResult.rows[0].notification_preferences;
+      if (prefs) {
+        const parsedPrefs = typeof prefs === 'string' ? JSON.parse(prefs) : prefs;
+        if (parsedPrefs.emailNotifications === false) {
+          console.log(`[EMAIL BLOCKED] User ${to} has disabled email notifications.`);
+          return {
+            success: true,
+            messageId: 'blocked-by-user-preferences',
+            blocked: true,
+          };
+        }
       }
     }
+  } catch (error) {
+    console.error('Error checking user preferences in emailService:', error);
+    // Continue with sending if preference check fails to be safe
+  }
 
-    const transporter = createTransporter();
-    const from = process.env.EMAIL_FROM || `İTÜ Study Space Finder <${process.env.EMAIL_USER}>`;
-
-    const mailOptions = {
-      from: from,
+  // Test mode mock
+  if (process.env.NODE_ENV === 'test') {
+    console.log('[TEST MODE] Email would be sent:', {
       to: to,
+      subject: subject,
+    });
+    return {
+      success: true,
+      messageId: 'test-message-id',
+    };
+  }
+
+  try {
+    if (!process.env.SENDGRID_API_KEY) {
+      console.error('Email configuration missing. SENDGRID_API_KEY must be set.');
+      throw new Error('Email service not configured');
+    }
+
+    const from = process.env.EMAIL_FROM || 'İTÜ Study Space Finder <noreply@example.com>';
+
+    const msg = {
+      to: to,
+      from: from,
       subject: subject,
       html: html,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const response = await sgMail.send(msg);
     
     console.log('Email sent successfully:', {
       to: to,
       subject: subject,
-      messageId: info.messageId,
+      messageId: response[0].headers['x-message-id'],
     });
 
     return {
       success: true,
-      messageId: info.messageId,
+      messageId: response[0].headers['x-message-id'],
     };
   } catch (error) {
     console.error('Error sending email:', error);
+    if (error.response) {
+      console.error('SendGrid error details:', error.response.body);
+    }
     throw error;
   }
 };

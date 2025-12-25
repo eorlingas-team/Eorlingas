@@ -1,5 +1,7 @@
 const pool = require('../config/db');
 const recommendationService = require('../services/recommendationService');
+const bookingModel = require('../models/bookingModel');
+const emailService = require('../services/emailService');
 const logAuditEvent = require('../utils/auditLogger');
 const { toIstanbulDate, getIstanbulHourMinute, getIstanbulNow } = require('../utils/dateHelpers');
 const { addDays } = require('date-fns');
@@ -48,9 +50,7 @@ const formatSpace = (row) => {
     },
     
     currentAvailability: row.status === 'Available' ? 'Available' : row.status, 
-    nextAvailableTime: null,
-    maintenanceStartDate: row.maintenance_start_date,
-    maintenanceEndDate: row.maintenance_end_date
+    nextAvailableTime: null
   };
 };
 
@@ -73,7 +73,7 @@ exports.getAllSpaces = async (req, res) => {
       whereConditions.push(`s.status = $${paramIndex}`);
       params.push(status);
       paramIndex++;
-    } else {
+    } else if (req.query.includeDeleted !== 'true') {
       whereConditions.push(`s.status != 'Deleted'`);
     }
 
@@ -333,18 +333,8 @@ const generateDailySlots = (dateObj, space, bookings) => {
   // If still no operating hours, the space is closed on this day
   if (!startStr || !endStr) return { date: dateStr, slots: [], closed: true };
 
-  // Check if space is in maintenance on this date
-  let isInMaintenance = false;
-  
-  if (space.status === 'Maintenance' && space.maintenance_start_date && space.maintenance_end_date) {
-    const mStartStr = toIstanbulDate(space.maintenance_start_date);
-    const mEndStr = toIstanbulDate(space.maintenance_end_date);
-    
-    // Compare YYYY-MM-DD strings
-    if (dateStr >= mStartStr && dateStr <= mEndStr) {
-      isInMaintenance = true;
-    }
-  }
+  // Check if space is in maintenance
+  const isInMaintenance = space.status === 'Maintenance';
 
   const slots = [];
   
@@ -352,10 +342,12 @@ const generateDailySlots = (dateObj, space, bookings) => {
   const [startH, startM] = startStr.split(':').map(Number);
   const [endH, endM] = endStr.split(':').map(Number);
   
-  let currentMin = startH * 60 + (startM || 0);
-  const endMin = endH * 60 + (endM || 0);
+  const startMin = startH * 60 + (startM || 0);
+  let endMin = endH * 60 + (endM || 0);
+  if (endH === 23 && endM === 59) endMin = 1440; // Treat 23:59 as end of day
 
-  while (currentMin + 15 <= endMin) {
+  let currentMin = startMin;
+  while (currentMin < endMin) {
     const slotStartTotal = currentMin;
     const slotEndTotal = currentMin + 15;
 
@@ -607,10 +599,14 @@ exports.createSpace = async (req, res) => {
 exports.updateSpace = async (req, res) => {
   const { id } = req.params;
   const body = req.body;
+  const client = await pool.connect();
 
   try {
-    const currentResult = await pool.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
+    await client.query('BEGIN');
+
+    const currentResult = await client.query('SELECT * FROM study_spaces WHERE space_id = $1', [id]);
     if (currentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be updated not found." } });
     }
     const current = currentResult.rows[0];
@@ -623,6 +619,7 @@ exports.updateSpace = async (req, res) => {
     // 0. Validation: Capacity
     const finalCapacity = body.capacity !== undefined ? body.capacity : current.capacity;
     if (finalCapacity < 1 || finalCapacity > 100) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Capacity must be between 1 and 100." } });
     }
 
@@ -631,11 +628,12 @@ exports.updateSpace = async (req, res) => {
     const finalRoomNumber = body.roomNumber !== undefined ? body.roomNumber : current.room_number;
     
     if (finalBuildingId !== current.building_id || finalRoomNumber !== current.room_number) {
-      const uniqueCheck = await pool.query(
+      const uniqueCheck = await client.query(
         'SELECT 1 FROM study_spaces WHERE building_id = $1 AND room_number = $2 AND space_id != $3 AND status != \'Deleted\'',
         [finalBuildingId, finalRoomNumber, id]
       );
       if (uniqueCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
         return res.status(400).json({ 
           success: false, 
           error: { 
@@ -646,21 +644,8 @@ exports.updateSpace = async (req, res) => {
       }
     }
 
-    // 2. Validation: Maintenance Dates
+    // Status validation
     const finalStatus = body.status !== undefined ? body.status : current.status;
-    if (finalStatus === 'Maintenance') {
-      const mStart = body.maintenanceStartDate || current.maintenance_start_date;
-      const mEnd = body.maintenanceEndDate || current.maintenance_end_date;
-      if (!mStart || !mEnd || new Date(mEnd) <= new Date(mStart)) {
-        return res.status(400).json({ 
-          success: false, 
-          error: { 
-            code: "MAINTENANCE_DATE_ERROR", 
-            message: "Valid start and end dates must be provided for maintenance status. The end date must be after the start date." 
-          } 
-        });
-      }
-    }
 
     const query = `
       UPDATE study_spaces 
@@ -680,10 +665,8 @@ exports.updateSpace = async (req, res) => {
         operating_hours_weekend_end = $13,
         status = $14,
         building_id = $15,
-        maintenance_start_date = $16,
-        maintenance_end_date = $17,
         updated_at = CURRENT_TIMESTAMP
-      WHERE space_id = $18
+      WHERE space_id = $16
       RETURNING *
     `;
 
@@ -698,79 +681,176 @@ exports.updateSpace = async (req, res) => {
       body.amenities !== undefined ? JSON.stringify(body.amenities) : current.amenities,
       body.accessibilityFeatures !== undefined ? JSON.stringify(body.accessibilityFeatures) : current.accessibility_features,
       weekdayStart, weekdayEnd, weekendStart, weekendEnd,
-      body.status !== undefined ? body.status : current.status,
-      body.buildingId !== undefined ? body.buildingId : current.building_id,
-      body.maintenanceStartDate !== undefined ? body.maintenanceStartDate : current.maintenance_start_date,
-      body.maintenanceEndDate !== undefined ? body.maintenanceEndDate : current.maintenance_end_date,
+      finalStatus,
+      finalBuildingId,
       id
     ];
 
-    const result = await pool.query(query, values);
+    const result = await client.query(query, values);
+    const updatedSpace = result.rows[0];
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be updated not found." } });
+    // Handle Maintenance Cancellations - cancel ALL future bookings if status is Maintenance
+    let affectedBookings = [];
+    if (finalStatus === 'Maintenance') {
+      const now = getIstanbulNow();
+      // Find all future confirmed bookings for this space
+      affectedBookings = await bookingModel.findFutureBySpaceIdWithUser(id, now, client);
+
+      if (affectedBookings.length > 0) {
+        const cancelQuery = `
+          UPDATE bookings
+          SET status = 'Cancelled',
+              cancelled_at = CURRENT_TIMESTAMP,
+              cancellation_reason = 'Space_Maintenance'
+          WHERE space_id = $1
+            AND status = 'Confirmed'
+            AND start_time > $2
+        `;
+        await client.query(cancelQuery, [id, now]);
+      }
     }
+
+    await client.query('COMMIT');
 
     // Audit Log: Space_Updated
     await logAuditEvent({
       userId: req.user?.userId || null,
       actionType: 'Space_Updated',
       targetEntityType: 'Space',
-      targetEntityId: result.rows[0].space_id,
+      targetEntityId: updatedSpace.space_id,
       ipAddress: req.ip || req.connection.remoteAddress,
       result: 'Success',
       beforeState: formatSpace(current),
-      afterState: formatSpace(result.rows[0])
+      afterState: formatSpace(updatedSpace)
     });
+
+    // 4. Send Notification Emails (Async)
+    if (affectedBookings.length > 0) {
+      Promise.all(affectedBookings.map(async (booking) => {
+        try {
+          if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
+            const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
+            if (fullBooking) {
+              fullBooking.cancellationReason = 'Space_Maintenance';
+              await emailService.sendBookingCancellationEmail({
+                to: booking.user.email,
+                fullName: booking.user.fullName,
+                booking: fullBooking
+              });
+            }
+          }
+        } catch (emailErr) {
+          console.error(`Failed to send maintenance cancellation email for booking ${booking.bookingId}:`, emailErr);
+        }
+      })).catch(err => console.error('Error in batch maintenance email processing:', err));
+    }
 
     res.status(200).json({
       success: true,
-      message: "Space updated successfully",
-      data: formatSpace(result.rows[0])
+      message: affectedBookings.length > 0 
+        ? `Space updated successfully. ${affectedBookings.length} overlapping bookings were cancelled due to maintenance.` 
+        : "Space updated successfully",
+      data: formatSpace(updatedSpace)
     });
 
   } catch (err) {
+    if (client) await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ success: false, error: { code: "UPDATE_ERROR", message: err.message } });
+  } finally {
+    if (client) client.release();
   }
 };
 
 // 5. MEKAN SİLME 
 exports.deleteSpace = async (req, res) => {
   const { id } = req.params;
+  const client = await pool.connect();
+
   try {
-    const query = `
+    await client.query('BEGIN');
+
+    // 1. Get upcoming bookings for this space BEFORE deleting
+    // We need user info for emails later
+    const upcomingBookings = await bookingModel.findUpcomingBySpaceIdWithUser(id, client);
+
+    // 2. Soft delete the space
+    const deleteSpaceQuery = `
       UPDATE study_spaces 
       SET status = 'Deleted', deleted_at = CURRENT_TIMESTAMP 
       WHERE space_id = $1 
       RETURNING space_id, status
     `;
+    const deleteResult = await client.query(deleteSpaceQuery, [id]);
 
-    const result = await pool.query(query, [id]);
-
-    if (result.rows.length === 0) {
+    if (deleteResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Space to be deleted not found." } });
     }
 
-    // Audit Log: Space_Deleted
+    // 3. Cancel all upcoming bookings
+    if (upcomingBookings.length > 0) {
+      const cancelBookingsQuery = `
+        UPDATE bookings
+        SET status = 'Cancelled', 
+            cancelled_at = CURRENT_TIMESTAMP, 
+            cancellation_reason = 'Administrative'
+        WHERE space_id = $1 
+          AND status = 'Confirmed'
+          AND start_time > NOW()
+      `;
+      await client.query(cancelBookingsQuery, [id]);
+    }
+
+    await client.query('COMMIT');
+
+    // 4. Audit Log: Space_Deleted
     await logAuditEvent({
       userId: req.user?.userId || null,
       actionType: 'Space_Deleted',
       targetEntityType: 'Space',
-      targetEntityId: result.rows[0].space_id, // Assuming RETURNING space_id
+      targetEntityId: deleteResult.rows[0].space_id,
       ipAddress: req.ip || req.connection.remoteAddress,
       result: 'Success',
       afterState: { status: 'Deleted', deletedAt: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX") }
     });
 
+    // 5. Send Cancellation Emails (Async, outside transaction)
+    if (upcomingBookings.length > 0) {
+      // Background email sending
+      Promise.all(upcomingBookings.map(async (booking) => {
+        try {
+          // If the user has email notifications enabled
+          if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
+            const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
+            if (fullBooking) {
+              // Set the cancellation reason to Administrative for the email
+              fullBooking.cancellationReason = 'Administrative';
+              await emailService.sendBookingCancellationEmail({
+                to: booking.user.email,
+                fullName: booking.user.fullName,
+                booking: fullBooking
+              });
+            }
+          }
+        } catch (emailErr) {
+          console.error(`Failed to send cancellation email for booking ${booking.bookingId}:`, emailErr);
+        }
+      })).catch(err => console.error('Error in batch email processing:', err));
+    }
+
     res.status(200).json({
       success: true,
-      message: "Space deleted successfully (Soft Delete)",
-      data: result.rows[0]
+      message: `Space deleted successfully. ${upcomingBookings.length} upcoming bookings were cancelled and users notified.`,
+      data: deleteResult.rows[0]
     });
+
   } catch (err) {
+    if (client) await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ success: false, error: { code: "DELETE_ERROR", message: err.message } });
+  } finally {
+    if (client) client.release();
   }
 };
 

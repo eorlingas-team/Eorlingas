@@ -2,8 +2,9 @@ const pool = require('../config/db');
 const bookingModel = require('../models/bookingModel');
 const userModel = require('../models/userModel');
 const emailService = require('./emailService');
-const { getIstanbulNow } = require('../utils/dateHelpers');
+const { getIstanbulNow, getIstanbulHourMinute, ISTANBUL_TZ } = require('../utils/dateHelpers');
 const { addDays } = require('date-fns');
+const { toZonedTime } = require('date-fns-tz');
 
 /**
  * Generate unique confirmation number
@@ -113,7 +114,11 @@ const getSpaceById = async (spaceId) => {
  * @returns {Object} { valid: boolean, message?: string }
  */
 const checkOperatingHours = (space, startTime, endTime) => {
-  const dayOfWeek = startTime.getDay();
+  const { hour: startHour, minute: startMinute } = getIstanbulHourMinute(startTime);
+  const { hour: endHour, minute: endMinute } = getIstanbulHourMinute(endTime);
+  
+  // Get Istanbul day of week
+  const dayOfWeek = toZonedTime(startTime, ISTANBUL_TZ).getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   const operatingHours = isWeekend ? space.operatingHours.weekend : space.operatingHours.weekday;
@@ -125,25 +130,21 @@ const checkOperatingHours = (space, startTime, endTime) => {
   const [opStartHour, opStartMin] = operatingHours.start.split(':').map(Number);
   const [opEndHour, opEndMin] = operatingHours.end.split(':').map(Number);
 
-  const opStartTime = new Date(startTime);
-  opStartTime.setHours(opStartHour, opStartMin, 0, 0);
-
-  const opEndTime = new Date(startTime);
-  opEndTime.setHours(opEndHour, opEndMin, 0, 0);
-
-  const bookingStart = new Date(startTime);
-  const bookingEnd = new Date(endTime);
-
-  if (bookingStart < opStartTime) {
-    return { valid: false, message: `Booking must start after ${operatingHours.start}` };
-  }
+  const startTotalMinutes = startHour * 60 + startMinute;
+  const endTotalMinutes = endHour * 60 + endMinute;
+  const opStartTotalMinutes = opStartHour * 60 + opStartMin;
+  let opEndTotalMinutes = opEndHour * 60 + opEndMin;
 
   // Handle 23:59 as end of day (24:00)
   if (opEndHour === 23 && opEndMin === 59) {
-    opEndTime.setHours(24, 0, 0, 0); 
+    opEndTotalMinutes = 24 * 60;
   }
 
-  if (bookingEnd > opEndTime) {
+  if (startTotalMinutes < opStartTotalMinutes) {
+    return { valid: false, message: `Booking must start after ${operatingHours.start}` };
+  }
+
+  if (endTotalMinutes > opEndTotalMinutes) {
     return { valid: false, message: `Booking must end before ${operatingHours.end}` };
   }
 
@@ -418,16 +419,18 @@ const cancelBooking = async (bookingId, userId, cancellationReason = 'User_Reque
       throw error;
     }
 
-    const gracePeriodMinutes = 15;
-    const gracePeriod = new Date(startTime);
-    gracePeriod.setMinutes(gracePeriod.getMinutes() - gracePeriodMinutes);
+    if (cancellationReason === 'User_Requested') {
+      const gracePeriodMinutes = 15;
+      const gracePeriod = new Date(startTime);
+      gracePeriod.setMinutes(gracePeriod.getMinutes() - gracePeriodMinutes);
 
-    if (now >= gracePeriod) {
-      await client.query('ROLLBACK');
-      const error = new Error(`Cannot cancel booking within ${gracePeriodMinutes} minutes of start time`);
-      error.statusCode = 400;
-      error.code = 'VALIDATION_ERROR';
-      throw error;
+      if (now >= gracePeriod) {
+        await client.query('ROLLBACK');
+        const error = new Error(`Cannot cancel booking within ${gracePeriodMinutes} minutes of start time`);
+        error.statusCode = 400;
+        error.code = 'VALIDATION_ERROR';
+        throw error;
+      }
     }
 
     const cancelledBooking = await bookingModel.updateStatus(

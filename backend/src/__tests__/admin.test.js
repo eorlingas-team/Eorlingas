@@ -145,9 +145,7 @@ describe('Administrative API Tests (Comprehensive)', () => {
       .put('/api/spaces/1') // Adjusted route to use updateSpace
       .set('Authorization', 'Bearer token')
       .send({
-        status: 'Maintenance',
-        maintenanceStartDate: '2025-10-20',
-        maintenanceEndDate: '2025-10-25'
+        status: 'Maintenance'
       });
     
     if (res.statusCode !== 200) console.log('Update Status Error:', res.body);

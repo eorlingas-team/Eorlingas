@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { spacesApi } from '../api/spaces';
 import { useToast } from '../contexts/ToastContext';
 import Header from '../components/Header';
+import LoadingSpinner from '../components/LoadingSpinner';
 import styles from '../styles/CreateSpacePage.module.css';
 
 const CreateSpacePage = () => {
@@ -14,6 +15,7 @@ const CreateSpacePage = () => {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   const [filterOptions, setFilterOptions] = useState({
     campuses: [],
@@ -100,6 +102,8 @@ const CreateSpacePage = () => {
 
     if (currentStep < 4) setCurrentStep(currentStep + 1);
     else {
+      if (submitting) return;
+      setSubmitting(true);
       try {
         const payload = {
           spaceName: formData.spaceName,
@@ -146,6 +150,8 @@ const CreateSpacePage = () => {
       } catch (err) {
         console.error("Create Space Error:", err);
         addToast("Failed to create space.", "error");
+      } finally {
+        setSubmitting(false);
       }
     }
   };
@@ -506,9 +512,19 @@ const CreateSpacePage = () => {
               </div>
 
               <div className={`${styles['form-footer']}`} style={{ justifyContent: 'flex-end' }}>
-                <button className={`${styles['btn-next']}`} onClick={handleNext}>
-                  <span>{currentStep === 4 ? 'Create Space' : 'Next Step'}</span>
-                  <span className={`material-symbols-outlined`}>arrow_forward</span>
+                <button
+                  className={`${styles['btn-next']}`}
+                  onClick={handleNext}
+                  disabled={submitting}
+                >
+                  <span>
+                    {submitting ? (
+                      <LoadingSpinner size="sm" color="white" />
+                    ) : (
+                      currentStep === 4 ? 'Create Space' : 'Next Step'
+                    )}
+                  </span>
+                  {!submitting && <span className={`material-symbols-outlined`}>arrow_forward</span>}
                 </button>
               </div>
             </div>

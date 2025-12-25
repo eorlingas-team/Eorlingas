@@ -230,18 +230,44 @@
 .status-badge.deleted .status-dot { background-color: #ef4444; }
 
 /* Action Buttons */
-.action-btn {
-  padding: 8px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
+.action-buttons-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.action-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background-color: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.2s;
 }
 
-.action-btn:hover { background-color: var(--bg-tertiary); color: var(--text-main); }
+.action-icon-btn:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-main);
+  transform: scale(1.05);
+  color: var(--text-main);
+}
+
+.action-icon-btn.edit:hover {
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.action-icon-btn.delete:hover {
+  color: #dc2626;
+  background-color: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.2);
+}
 
 /* Pagination */
 .pagination-bar {

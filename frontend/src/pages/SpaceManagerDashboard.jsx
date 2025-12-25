@@ -53,7 +53,11 @@ const SpaceManagerDashboard = () => {
   const filteredSpaces = React.useMemo(() => {
     return spaces.filter(space => {
       // Status Filter
-      if (filters.status !== 'All' && space.status !== filters.status) return false;
+      if (filters.status === 'All') {
+        if (space.status === 'Deleted') return false;
+      } else if (space.status !== filters.status) {
+        return false;
+      }
 
       // Campus Filter
       if (filters.campus !== 'All' && space.building?.campus?.campusName !== filters.campus) return false;
@@ -98,7 +102,7 @@ const SpaceManagerDashboard = () => {
   };
 
   // Table columns configuration
-  const columns = [
+  const columns = React.useMemo(() => [
     {
       key: 'spaceName',
       label: 'Space Name',
@@ -146,17 +150,28 @@ const SpaceManagerDashboard = () => {
       align: 'right',
       sortable: false,
       render: (space) => (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button className={`${styles['action-btn']}`} onClick={() => navigate(isAdmin ? `/admin/space-management/edit/${space.spaceId}` : `/space-manager/edit/${space.spaceId}`)}>
+        <div className={styles['action-buttons-wrapper']}>
+          <button
+            className={`${styles['action-icon-btn']} ${styles.edit}`}
+            onClick={() => navigate(isAdmin ? `/admin/space-management/edit/${space.spaceId}` : `/space-manager/edit/${space.spaceId}`)}
+            title="Edit Space"
+          >
             <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>edit</span>
           </button>
-          <button className={`${styles['action-btn']}`} onClick={() => handleDelete(space.spaceId)}>
+          <button
+            className={`${styles['action-icon-btn']} ${styles.delete}`}
+            onClick={() => handleDelete(space.spaceId)}
+            title="Delete Space"
+          >
             <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>delete</span>
           </button>
         </div>
       )
     }
-  ];
+  ].filter(col => {
+    if (col.key === 'actions' && filters.status === 'Deleted') return false;
+    return true;
+  }), [filters.status, isAdmin]);
 
   // Filters configuration
   const tableFilters = [

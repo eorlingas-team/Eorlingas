@@ -19,6 +19,7 @@ const UserManagementPage = () => {
   const { confirm } = useConfirm();
   const [localSearch, setLocalSearch] = useState('');
   const [activeRolePopup, setActiveRolePopup] = useState(null);
+  const [popoverOpenUpward, setPopoverOpenUpward] = useState({});
 
   useEffect(() => {
     handleClearFilters();
@@ -253,7 +254,19 @@ const UserManagementPage = () => {
               className={`${styles['action-icon-btn']} ${styles.edit} ${activeRolePopup === user.userId ? styles.active : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
-                setActiveRolePopup(activeRolePopup === user.userId ? null : user.userId);
+                if (activeRolePopup === user.userId) {
+                  setActiveRolePopup(null);
+                } else {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const spaceBelow = window.innerHeight - rect.bottom;
+                  const spaceAbove = rect.top;
+
+                  setPopoverOpenUpward(prev => ({
+                    ...prev,
+                    [user.userId]: spaceBelow < 200 && spaceAbove > spaceBelow
+                  }));
+                  setActiveRolePopup(user.userId);
+                }
               }}
               title="Change Role"
             >
@@ -261,12 +274,16 @@ const UserManagementPage = () => {
             </button>
 
             {activeRolePopup === user.userId && (
-              <div className={`${styles['role-popover']}`} onClick={(e) => e.stopPropagation()}>
+              <div className={`${styles['role-popover']} ${popoverOpenUpward[user.userId] ? styles['role-popover-upward'] : ''}`} onClick={(e) => e.stopPropagation()}>
                 <button
                   className={`${styles['role-option']} ${styles.student} ${user.role === 'Student' ? styles.active : ''}`}
                   onClick={() => {
-                    handleRoleChange(user.userId, 'Student');
-                    setActiveRolePopup(null);
+                    if (user.role === 'Student') {
+                      setActiveRolePopup(null);
+                    } else {
+                      handleRoleChange(user.userId, 'Student');
+                      setActiveRolePopup(null);
+                    }
                   }}
                 >
                   <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>school</span>
@@ -275,8 +292,12 @@ const UserManagementPage = () => {
                 <button
                   className={`${styles['role-option']} ${styles.manager} ${user.role === 'Space_Manager' ? styles.active : ''}`}
                   onClick={() => {
-                    handleRoleChange(user.userId, 'Space_Manager');
-                    setActiveRolePopup(null);
+                    if (user.role === 'Space_Manager') {
+                      setActiveRolePopup(null);
+                    } else {
+                      handleRoleChange(user.userId, 'Space_Manager');
+                      setActiveRolePopup(null);
+                    }
                   }}
                 >
                   <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>supervised_user_circle</span>
@@ -285,8 +306,12 @@ const UserManagementPage = () => {
                 <button
                   className={`${styles['role-option']} ${styles.admin} ${user.role === 'Administrator' ? styles.active : ''}`}
                   onClick={() => {
-                    handleRoleChange(user.userId, 'Administrator');
-                    setActiveRolePopup(null);
+                    if (user.role === 'Administrator') {
+                      setActiveRolePopup(null);
+                    } else {
+                      handleRoleChange(user.userId, 'Administrator');
+                      setActiveRolePopup(null);
+                    }
                   }}
                 >
                   <span className={`material-symbols-outlined`} style={{ fontSize: '18px' }}>admin_panel_settings</span>

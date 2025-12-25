@@ -372,6 +372,13 @@ input:checked + .slider:before { transform: translateX(20px); }
   background-color: #ef4444; 
 }
 
+.landing-status-indicator.maintenance .landing-status-dot { 
+  background-color: rgba(249, 115, 22, 0.2); 
+}
+.landing-status-indicator.maintenance .landing-status-dot::after { 
+  background-color: #f97316; 
+}
+
 .card-header {
   padding-top: 8px;
   height: 6rem;

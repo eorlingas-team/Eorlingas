@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const spaceController = require('../controllers/spaceController');
-const { optionalAuth } = require('../middleware/authMiddleware');
+const { optionalAuth, authenticate } = require('../middleware/authMiddleware');
+const { requireSpaceManagerOrAdmin } = require('../middleware/authorizationMiddleware');
 
 //  Tümünü listele (Landing Page)
 router.get('/', optionalAuth, spaceController.getAllSpaces);
@@ -15,12 +16,12 @@ router.get('/:id', spaceController.getSpaceById);
 router.get('/:id/availability', spaceController.getSpaceAvailability);
 
 //  Yeni ekle (Admin Dashboard)
-router.post('/', spaceController.createSpace);
+router.post('/', authenticate, requireSpaceManagerOrAdmin, spaceController.createSpace);
 
 // Güncelle 
-router.put('/:id', spaceController.updateSpace);
+router.put('/:id', authenticate, requireSpaceManagerOrAdmin, spaceController.updateSpace);
 
 //  Sil (Admin Dashboard)
-router.delete('/:id', spaceController.deleteSpace);
+router.delete('/:id', authenticate, requireSpaceManagerOrAdmin, spaceController.deleteSpace);
 
 module.exports = router;
