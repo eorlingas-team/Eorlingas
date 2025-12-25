@@ -194,8 +194,9 @@ const CreateSpacePage = () => {
         return (
           <div className={`${styles['form-fields']}`}>
             <div className={`${styles['input-group']}`}>
-              <label className={`${styles['input-label']}`}>Campus</label>
+              <label htmlFor="campusId" className={`${styles['input-label']}`}>Campus</label>
               <select
+                id="campusId"
                 name="campusId"
                 className={`${styles['form-select']} ${errors.campusId ? styles.error : ''}`}
                 value={formData.campusId}
@@ -213,8 +214,9 @@ const CreateSpacePage = () => {
               {errors.campusId && <span className={`${styles['error-text']}`}>Please select a campus</span>}
             </div>
             <div className={`${styles['input-group']}`}>
-              <label className={`${styles['input-label']}`}>Building</label>
+              <label htmlFor="buildingId" className={`${styles['input-label']}`}>Building</label>
               <select
+                id="buildingId"
                 name="buildingId"
                 className={`${styles['form-select']} ${errors.buildingId ? styles.error : ''}`}
                 value={formData.buildingId}
@@ -232,8 +234,9 @@ const CreateSpacePage = () => {
               {errors.buildingId && <span className={`${styles['error-text']}`}>Please select a building</span>}
             </div>
             <div className={`${styles['input-group']}`}>
-              <label className={`${styles['input-label']}`}>Floor</label>
+              <label htmlFor="floor" className={`${styles['input-label']}`}>Floor</label>
               <input
+                id="floor"
                 type="number"
                 name="floor"
                 className={`${styles['form-input']} ${errors.floor ? styles.error : ''}`}
@@ -250,8 +253,9 @@ const CreateSpacePage = () => {
         return (
           <div className={`${styles['form-fields']}`}>
             <div className={`${styles['input-group']}`}>
-              <label className={`${styles['input-label']}`}>Space Name</label>
+              <label htmlFor="spaceName" className={`${styles['input-label']}`}>Space Name</label>
               <input
+                id="spaceName"
                 type="text"
                 name="spaceName"
                 className={`${styles['form-input']} ${errors.spaceName ? styles.error : ''}`}
@@ -264,8 +268,9 @@ const CreateSpacePage = () => {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div className={`${styles['input-group']}`}>
-                <label className={`${styles['input-label']}`}>Room Number</label>
+                <label htmlFor="roomNumber" className={`${styles['input-label']}`}>Room Number</label>
                 <input
+                  id="roomNumber"
                   type="text"
                   name="roomNumber"
                   className={`${styles['form-input']} ${errors.roomNumber ? styles.error : ''}`}
@@ -277,8 +282,9 @@ const CreateSpacePage = () => {
                 {errors.roomNumber && <span className={`${styles['error-text']}`}>Enter room number</span>}
               </div>
               <div className={`${styles['input-group']}`}>
-                <label className={`${styles['input-label']}`}>Capacity</label>
+                <label htmlFor="capacity" className={`${styles['input-label']}`}>Capacity</label>
                 <input
+                  id="capacity"
                   type="number"
                   name="capacity"
                   className={`${styles['form-input']} ${errors.capacity ? styles.error : ''}`}
@@ -292,16 +298,16 @@ const CreateSpacePage = () => {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div className={`${styles['input-group']}`}>
-                <label className={`${styles['input-label']}`}>Room Type</label>
-                <select name="roomType" className={`${styles['form-select']}`} value={formData.roomType} onChange={handleChange}>
+                <label htmlFor="roomType" className={`${styles['input-label']}`}>Room Type</label>
+                <select id="roomType" name="roomType" className={`${styles['form-select']}`} value={formData.roomType} onChange={handleChange}>
                   {filterOptions.roomTypes.map(rt => (
                     <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
                   ))}
                 </select>
               </div>
               <div className={`${styles['input-group']}`}>
-                <label className={`${styles['input-label']}`}>Noise Level</label>
-                <select name="noiseLevel" className={`${styles['form-select']}`} value={formData.noiseLevel} onChange={handleChange}>
+                <label htmlFor="noiseLevel" className={`${styles['input-label']}`}>Noise Level</label>
+                <select id="noiseLevel" name="noiseLevel" className={`${styles['form-select']}`} value={formData.noiseLevel} onChange={handleChange}>
                   {filterOptions.noiseLevels.map(nl => (
                     <option key={nl} value={nl}>{nl}</option>
                   ))}

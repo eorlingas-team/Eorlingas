@@ -289,7 +289,7 @@ const deleteAccount = async (req, res, next) => {
       `UPDATE bookings 
        SET status = 'Cancelled', 
            cancelled_at = NOW(),
-           cancellation_reason = 'User Deleted Account'
+           cancellation_reason = 'User_Requested'
        WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
       [userId]
     );

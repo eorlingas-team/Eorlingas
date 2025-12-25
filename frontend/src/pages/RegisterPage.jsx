@@ -95,9 +95,10 @@ const RegisterPage = () => {
 
         <div className={`${styles['register-card']}`}>
           <form onSubmit={handleRegister} className={`${styles['register-form']}`}>
-            <label className={`${styles['form-label-group']}`}>
-              <span className={`${styles['form-label']}`}>Full Name</span>
+            <div className={`${styles['form-label-group']}`}>
+              <label htmlFor="fullName" className={`${styles['form-label']}`}>Full Name</label>
               <input
+                id="fullName"
                 name="fullName"
                 type="text"
                 className={`${styles['form-input']}`}
@@ -106,28 +107,29 @@ const RegisterPage = () => {
                 onChange={handleChange}
                 required
               />
-            </label>
+            </div>
 
             <div className={`${styles['form-label-group']}`}>
-              <label>
-                <span className={`${styles['form-label']}`}>İTÜ Email</span>
-                <input
-                  name="email"
-                  type="email"
-                  className={`${styles['form-input']}`}
-                  placeholder="user@itu.edu.tr"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
+              <label htmlFor="email" className={`${styles['form-label']}`}>İTÜ Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                className={`${styles['form-input']}`}
+                placeholder="user@itu.edu.tr"
+                value={formData.email}
+                onChange={handleChange}
+                required
+              />
+
               <p className={`${styles['helper-text']}`}>Please use your official İTÜ email address.</p>
             </div>
 
             <div className={`${styles['form-grid-row']}`}>
-              <label className={`${styles['form-label-group']}`}>
-                <span className={`${styles['form-label']}`}>Student Number</span>
+              <div className={`${styles['form-label-group']}`}>
+                <label htmlFor="studentNumber" className={`${styles['form-label']}`}>Student Number</label>
                 <input
+                  id="studentNumber"
                   name="studentNumber"
                   type="text"
                   className={`${styles['form-input']}`}
@@ -136,11 +138,12 @@ const RegisterPage = () => {
                   onChange={handleChange}
                   required
                 />
-              </label>
+              </div>
 
-              <label className={`${styles['form-label-group']}`}>
-                <span className={`${styles['form-label']}`}>Phone Number <span className={`${styles['label-optional']}`}>(Optional)</span></span>
+              <div className={`${styles['form-label-group']}`}>
+                <label htmlFor="phoneNumber" className={`${styles['form-label']}`}>Phone Number <span className={`${styles['label-optional']}`}>(Optional)</span></label>
                 <input
+                  id="phoneNumber"
                   name="phoneNumber"
                   type="tel"
                   className={`${styles['form-input']}`}
@@ -148,13 +151,14 @@ const RegisterPage = () => {
                   value={formData.phoneNumber}
                   onChange={handleChange}
                 />
-              </label>
+              </div>
             </div>
 
             <div className={`${styles['form-label-group']}`}>
-              <span className={`${styles['form-label']}`}>Password</span>
+              <label htmlFor="password" className={`${styles['form-label']}`}>Password</label>
               <div className={`${styles['password-wrapper']}`}>
                 <input
+                  id="password"
                   name="password"
                   type={showPassword ? "text" : "password"}
                   className={`${styles['form-input']}`}
@@ -176,9 +180,10 @@ const RegisterPage = () => {
             </div>
 
             <div className={`${styles['form-label-group']}`}>
-              <span className={`${styles['form-label']}`}>Confirm Password</span>
+              <label htmlFor="confirmPassword" className={`${styles['form-label']}`}>Confirm Password</label>
               <div className={`${styles['password-wrapper']}`}>
                 <input
+                  id="confirmPassword"
                   name="confirmPassword"
                   type={showConfirm ? "text" : "password"}
                   className={`${styles['form-input']} ${formData.confirmPassword && formData.password !== formData.confirmPassword ? styles.error : ''}`}
@@ -205,8 +210,8 @@ const RegisterPage = () => {
         <p className={`${styles['register-footer']}`}>
           Already have an account? <span className={`${styles['login-link']}`} onClick={() => navigate('/login')}>Log in</span>
         </p>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

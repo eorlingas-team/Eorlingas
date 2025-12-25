@@ -17,6 +17,13 @@ jest.mock('../models/userModel');
 jest.mock('bcrypt');
 
 const userModel = require('../models/userModel');
+const pool = require('../config/db');
+
+// Mock db pool
+jest.mock('../config/db', () => ({
+  query: jest.fn(),
+  connect: jest.fn(),
+}));
 
 describe('Profile Controller', () => {
   let req, res, next;
@@ -652,6 +659,77 @@ describe('Profile Controller', () => {
       bcrypt.hash.mockRejectedValue(error);
 
       await profileController.changePassword(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('deleteAccount', () => {
+    it('should delete account successfully and cancel bookings', async () => {
+      const mockUser = {
+        user_id: 1,
+        role: 'Student',
+        status: 'Verified',
+      };
+
+      userModel.findById.mockResolvedValue(mockUser);
+      pool.query.mockResolvedValue({ rows: [] }); // For admin check (if applicable) and booking update
+      userModel.update.mockResolvedValue({ ...mockUser, status: 'Deleted' });
+      userModel.clearRefreshToken.mockResolvedValue(true);
+
+      await profileController.deleteAccount(req, res, next);
+
+      expect(userModel.findById).toHaveBeenCalledWith(1);
+      // Check if pool.query was called with correct cancellation reason
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining("cancellation_reason = 'User_Requested'"),
+        [1]
+      );
+      expect(userModel.update).toHaveBeenCalledWith(1, { status: 'Deleted' });
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: 'Account deleted successfully',
+        })
+      );
+    });
+
+    it('should return 400 if user is the last administrator', async () => {
+      const mockUser = {
+        user_id: 1,
+        role: 'Administrator',
+        status: 'Verified',
+      };
+
+      userModel.findById.mockResolvedValue(mockUser);
+      pool.query.mockResolvedValue({ rows: [{ count: '1' }] });
+
+      await profileController.deleteAccount(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({
+            code: 'OPERATION_NOT_ALLOWED',
+          }),
+        })
+      );
+    });
+
+    it('should return 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+
+      await profileController.deleteAccount(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('should handle errors and call next', async () => {
+      const error = new Error('Database error');
+      userModel.findById.mockRejectedValue(error);
+
+      await profileController.deleteAccount(req, res, next);
 
       expect(next).toHaveBeenCalledWith(error);
     });
