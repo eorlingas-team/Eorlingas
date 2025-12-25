@@ -12,14 +12,15 @@ const sendReminders = async (req, res) => {
   try {
     const { secret } = req.query;
     const cronSecret = process.env.CRON_SECRET || 'EorlingasCronSecret2025';
+    const reminderInterval = parseInt(process.env.REMINDER_INTERVAL_MINUTES || '70', 10);
 
     if (secret !== cronSecret) {
       return res.status(401).json({ error: 'Unauthorized: Invalid cron secret' });
     }
 
-    console.log('[CRON] Starting booking reminder check...');
+    console.log(`[CRON] Starting booking reminder check (Interval: ${reminderInterval} mins)...`);
 
-    const bookings = await bookingModel.findBookingsNeedingReminder();
+    const bookings = await bookingModel.findBookingsNeedingReminder(reminderInterval);
     
     console.log(`[CRON] Found ${bookings.length} bookings needing reminder.`);
 

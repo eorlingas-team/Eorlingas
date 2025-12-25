@@ -12,7 +12,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 
 const ProfilePage = () => {
   const navigate = useNavigate();
-  const { user, logout, updateProfile, deleteAccount } = useAuth();
+  const { user, logout, updateProfile, deleteAccount, refreshUser } = useAuth();
   const { theme, setTheme } = useTheme();
   const { addToast } = useToast();
   const { confirm } = useConfirm();
@@ -96,6 +96,10 @@ const ProfilePage = () => {
     setShowNewPass(false);
     setShowConfirmPass(false);
   };
+
+  useEffect(() => {
+    refreshUser();
+  }, []);
 
   useEffect(() => {
     if (user) {

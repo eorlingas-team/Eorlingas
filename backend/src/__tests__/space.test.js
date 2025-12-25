@@ -1,26 +1,54 @@
-const request = require('supertest');
-const app = require('../app');
-const pool = require('../config/db'); 
-const recommendationService = require('../services/recommendationService');
+jest.mock('../config/db', () => {
+  const mClient = {
+    query: jest.fn(),
+    release: jest.fn(),
+  };
+  return {
+    query: jest.fn(),
+    connect: jest.fn(() => mClient),
+    on: jest.fn(),
+    end: jest.fn(),
+    __mockClient: mClient,
+  };
+});
 
-// Mock DB
-jest.mock('../config/db', () => ({
-  query: jest.fn(), 
-  connect: jest.fn(),
-  on: jest.fn(),
-  end: jest.fn(),
-}));
+const pool = require('../config/db');
+const mockClient = pool.__mockClient;
 
-// Mock Recommendation Service
+jest.mock('../models/userModel');
+jest.mock('../models/bookingModel');
+jest.mock('../utils/auditLogger', () => jest.fn().mockResolvedValue({ success: true }));
+
 jest.mock('../services/recommendationService', () => ({
   scoreAndSortSpaces: jest.fn(),
   getPopularSpaces: jest.fn()
 }));
 
+jest.mock('../utils/jwtUtils', () => ({
+  verifyAccessToken: jest.fn(),
+}));
+
+const request = require('supertest');
+const app = require('../app');
+const recommendationService = require('../services/recommendationService');
+const userModel = require('../models/userModel');
+const bookingModel = require('../models/bookingModel');
+const { verifyAccessToken } = require('../utils/jwtUtils');
+
+
 describe('Space API Unit Tests (Mock DB)', () => {
   
   beforeEach(() => {
-    jest.resetAllMocks();
+    // Use mockReset() to fully reset mocks including mockImplementation
+    pool.query.mockReset();
+    mockClient.query.mockReset();
+    mockClient.release.mockReset();
+    
+    // Reset other mocks
+    if (userModel.findById.mockReset) userModel.findById.mockReset();
+    if (bookingModel.findUpcomingBySpaceIdWithUser.mockReset) bookingModel.findUpcomingBySpaceIdWithUser.mockReset();
+    
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue([]);
   });
 
   // 1. GET (Listeleme & Smart Sort)
@@ -98,34 +126,56 @@ describe('Space API Unit Tests (Mock DB)', () => {
   it('should create a new space successfully', async () => {
     const newSpace = {
       buildingId: 1,
-      spaceName: "Yeni Mock Oda",
-      roomNumber: "M-999",
+      spaceName: "Test Room",
+      roomNumber: "T-100",
       floor: 1,
       capacity: 10,
       roomType: "Quiet_Study",
       noiseLevel: "Silent",
-      amenities: ["Wifi"]
+      amenities: ["Wifi"],
+      operatingHours: {
+        weekday: { start: "08:00", end: "22:00" },
+        weekend: { start: "10:00", end: "20:00" }
+      }
     };
 
     const mockDbResponse = {
-      space_id: 10,
+      space_id: 100,
       building_id: 1,
-      space_name: "Yeni Mock Oda",
-      room_number: "M-999",
-      status: 'Available'
+      space_name: "Test Room",
+      room_number: "T-100",
+      floor: 1,
+      capacity: 10,
+      room_type: "Quiet_Study",
+      noise_level: "Silent",
+      status: 'Available',
+      operating_hours_weekday_start: '08:00',
+      operating_hours_weekday_end: '22:00',
+      operating_hours_weekend_start: '10:00',
+      operating_hours_weekend_end: '20:00',
+      amenities: JSON.stringify(["Wifi"]),
+      accessibility_features: JSON.stringify([])
     };
 
-    // Mock unique check query response (no existing room)
-    pool.query.mockResolvedValueOnce({ rows: [] });
-    // Mock create query response
-    pool.query.mockResolvedValueOnce({ rows: [mockDbResponse] });
-    // Audit log
-    pool.query.mockResolvedValueOnce({ rowCount: 1 });
+    // Mock Auth
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue([]);
 
-    const res = await request(app).post('/api/spaces').send(newSpace);
+    // Mock pool.query calls in order: unique check, insert, audit log
+    pool.query
+      .mockResolvedValueOnce({ rows: [] }) // Unique check - no duplicate
+      .mockResolvedValueOnce({ rows: [mockDbResponse] }) // Insert query
+      .mockResolvedValueOnce({ rows: [{ log_id: 1 }] }); // Audit log
+
+    const res = await request(app)
+      .post('/api/spaces')
+      .set('Authorization', 'Bearer token')
+      .send(newSpace);
 
     expect(res.statusCode).toEqual(201);
     expect(res.body.success).toBe(true);
+    expect(res.body.data.spaceName).toBe('Test Room');
   });
 
   // 5. DELETE (Silme - Admin)
@@ -133,10 +183,20 @@ describe('Space API Unit Tests (Mock DB)', () => {
     const spaceId = 10;
     const mockDeletedRow = { space_id: 10, status: 'Deleted' };
 
-    // deleteSpace uses pool.query once
-    pool.query.mockResolvedValueOnce({ rows: [mockDeletedRow] });
+    // Mock Auth
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue([]);
 
-    const res = await request(app).delete(`/api/spaces/${spaceId}`);
+    // deleteSpace uses client.query
+    mockClient.query
+       .mockResolvedValueOnce({ rows: [] }) // BEGIN
+       .mockResolvedValueOnce({ rows: [mockDeletedRow] }) // UPDATE
+       .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    const res = await request(app)
+      .delete(`/api/spaces/${spaceId}`)
+      .set('Authorization', 'Bearer token');
 
     expect(res.statusCode).toEqual(200);
     expect(res.body.success).toBe(true);
@@ -159,33 +219,83 @@ describe('Space API Unit Tests (Mock DB)', () => {
 
   // 7. Not Found Error Handling
   it('should return 404 when getting a non-existent space', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [] }); // Empty result
+    // getSpaceById uses Promise.all with 2 parallel queries
+    // When space is not found, both queries complete but first returns empty
+    pool.query.mockImplementation((query) => {
+      // Both queries run in parallel via Promise.all
+      if (query.includes('FROM study_spaces s')) {
+        return Promise.resolve({ rows: [] }); // Space query - no space found
+      }
+      if (query.includes('FROM bookings')) {
+        return Promise.resolve({ rows: [] }); // Bookings query
+      }
+      return Promise.resolve({ rows: [] });
+    });
+    
     const res = await request(app).get('/api/spaces/999');
     expect(res.statusCode).toEqual(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 
   it('should return 404 when updating a non-existent space', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [] }); // Update returns empty
-    const res = await request(app).put('/api/spaces/999').send({ spaceName: "New" });
+    // Mock Auth
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // SELECT returns empty
+      .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+    const res = await request(app)
+      .put('/api/spaces/999')
+      .set('Authorization', 'Bearer token')
+      .send({ spaceName: "New" });
     expect(res.statusCode).toEqual(404);
   });
 
   it('should return 404 when deleting a non-existent space', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [] }); // Update returns empty
-    const res = await request(app).delete('/api/spaces/999');
+    // Mock Auth
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue([]);
+
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [] }) // DELETE returns empty
+      .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+    const res = await request(app)
+      .delete('/api/spaces/999')
+      .set('Authorization', 'Bearer token');
     expect(res.statusCode).toEqual(404);
   });
 
   it('should return 404 when checking availability for non-existent space', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [] }); // Space check returns empty
+    // getSpaceAvailability uses a single query with JOIN
+    // Mock to return empty rows for non-existent space
+    pool.query.mockImplementation((query) => {
+      if (query.includes('FROM study_spaces s') && query.includes('JOIN buildings b')) {
+        return Promise.resolve({ rows: [] }); // Space check with JOIN returns empty
+      }
+      return Promise.resolve({ rows: [] });
+    });
+    
     const res = await request(app).get('/api/spaces/999/availability?startDate=2025-01-01&endDate=2025-01-02');
     expect(res.statusCode).toEqual(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
   
   // 8. Server Error Handling
   it('should return 500 on db error', async () => {
-    pool.query.mockRejectedValue(new Error("DB Error"));
+    // Mock a database error
+    pool.query.mockRejectedValueOnce(new Error("Database connection failed"));
+    
     const res = await request(app).get('/api/spaces');
     expect(res.statusCode).toEqual(500);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
   });
 });

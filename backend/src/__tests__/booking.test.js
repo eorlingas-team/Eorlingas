@@ -190,7 +190,7 @@ describe('Booking Controller', () => {
       };
 
       bookingService.validateBookingRequest.mockReturnValue({ valid: true, errors: [] });
-      const error = new Error('Space is already booked at this time');
+      const error = new Error('Space is already booked by someone else at this time');
       error.statusCode = 409;
       error.code = 'CONFLICT';
       bookingService.createBooking.mockRejectedValue(error);
@@ -228,7 +228,7 @@ describe('Booking Controller', () => {
           success: false,
           error: expect.objectContaining({
             code: 'CONFLICT',
-            message: 'Space is already booked at this time',
+            message: 'Space is already booked by someone else at this time',
           }),
         })
       );

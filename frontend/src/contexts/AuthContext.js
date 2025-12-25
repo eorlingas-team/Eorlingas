@@ -8,7 +8,8 @@ const AuthContext = createContext({
     user: null,
     login: () => { },
     logout: () => { },
-    updateProfile: () => { }
+    updateProfile: () => { },
+    refreshUser: () => { }
 });
 
 export const useAuth = () => {
@@ -72,13 +73,28 @@ export const AuthProvider = ({ children }) => {
     const updateProfile = async (data) => {
         const response = await authApi.updateProfile(data);
         if (response.data.success) {
-            setUser(prev => {
-                const updated = { ...prev, ...data };
-                localStorage.setItem('user', JSON.stringify(updated));
-                return updated;
-            });
+            const updatedUser = response.data.data;
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
         }
         return response;
+    };
+
+    const refreshUser = async () => {
+        try {
+            const response = await authApi.getCurrentUser();
+            if (response.data.success) {
+                const freshUser = response.data.data;
+                setUser(freshUser);
+                localStorage.setItem('user', JSON.stringify(freshUser));
+                return freshUser;
+            }
+        } catch (error) {
+            console.error("AuthContext RefreshUser Error:", error);
+            if (error.response?.status === 401) {
+                logout();
+            }
+        }
     };
 
     const deleteAccount = async () => {
@@ -102,6 +118,7 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         updateProfile,
+        refreshUser,
         deleteAccount
     }), [user, token, loading]);
 
