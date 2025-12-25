@@ -94,7 +94,7 @@ const getSystemStats = async (req, res) => {
       // Breakdown: Booking Status
       db.query(`
         SELECT
-          COUNT(CASE WHEN status = 'Confirmed' AND start_time <= NOW() THEN 1 END) as completed,
+          COUNT(CASE WHEN status = 'Completed' OR (status = 'Confirmed' AND start_time <= NOW()) THEN 1 END) as completed,
           COUNT(CASE WHEN status = 'Confirmed' AND start_time > NOW() THEN 1 END) as upcoming,
           COUNT(CASE WHEN status = 'Cancelled' THEN 1 END) as cancelled
         FROM bookings
@@ -379,7 +379,14 @@ const updateUser = async (req, res) => {
           [userId]
         );
         
-        updatedUser = await userModel.update(userId, { status: 'Suspended' });
+        // Set 1 week suspension
+        const suspendedUntil = new Date();
+        suspendedUntil.setDate(suspendedUntil.getDate() + 7);
+        
+        updatedUser = await userModel.update(userId, { 
+          status: 'Suspended',
+          suspended_until: suspendedUntil
+        });
         
         await logAuditEvent({
           userId: req.user?.userId || null,
@@ -389,12 +396,15 @@ const updateUser = async (req, res) => {
           ipAddress: req.ip || req.connection.remoteAddress,
           result: 'Success',
           beforeState: { status: user.status },
-          afterState: { status: 'Suspended' }
+          afterState: { status: 'Suspended', suspendedUntil: suspendedUntil }
         });
         break;
 
       case 'restore':
-        updatedUser = await userModel.update(userId, { status: 'Verified' });
+        updatedUser = await userModel.update(userId, { 
+          status: 'Verified',
+          suspended_until: null
+        });
 
         await logAuditEvent({
           userId: req.user?.userId || null,

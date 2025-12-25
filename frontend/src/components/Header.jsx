@@ -109,6 +109,12 @@ const Header = () => {
                             Users
                         </button>
                         <button
+                            className={`${styles['nav-link']} ${isActive('/admin/reports') ? styles.active : ''}`}
+                            onClick={() => navigate('/admin/reports')}
+                        >
+                            Reports
+                        </button>
+                        <button
                             className={`${styles['nav-link']} ${isActive('/admin/audit-logs') ? styles.active : ''}`}
                             onClick={() => navigate('/admin/audit-logs')}
                         >
@@ -185,6 +191,7 @@ const Header = () => {
                         <button onClick={() => { navigate('/admin'); closeMenu(); }} className={`${styles['nav-link']}`} style={{ textAlign: 'left' }}>Dashboard</button>
                         <button onClick={() => { navigate('/admin/space-management'); closeMenu(); }} className={`${styles['nav-link']}`} style={{ textAlign: 'left' }}>Spaces</button>
                         <button onClick={() => { navigate('/admin/users'); closeMenu(); }} className={`${styles['nav-link']}`} style={{ textAlign: 'left' }}>Users</button>
+                        <button onClick={() => { navigate('/admin/reports'); closeMenu(); }} className={`${styles['nav-link']}`} style={{ textAlign: 'left' }}>Reports</button>
                         <button onClick={() => { navigate('/admin/audit-logs'); closeMenu(); }} className={`${styles['nav-link']}`} style={{ textAlign: 'left' }}>Audit Logs</button>
                         <button onClick={() => { navigate('/profile'); closeMenu(); }} className={`${styles['nav-link']} ${isActive('/profile') ? styles.active : ''}`} style={{ textAlign: 'left' }}>Profile</button>
                         <button onClick={handleLogout} className={`${styles['nav-link']}`} style={{ textAlign: 'left', color: 'var(--danger-color)' }}>Logout</button>

@@ -118,6 +118,7 @@ const update = async (userId, updates) => {
       'refresh_token',
       'last_login',
       'notification_preferences',
+      'suspended_until',
     ];
 
     const updateFields = [];

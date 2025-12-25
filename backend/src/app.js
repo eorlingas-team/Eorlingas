@@ -35,4 +35,6 @@ app.use("/api/profile", profileRoutes);
 app.use('/api/spaces', spaceRoutes);
 app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/admin', adminRoutes);
+app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/cron', require('./routes/cronRoutes'));
 module.exports = app;

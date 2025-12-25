@@ -518,6 +518,27 @@ const ProfilePage = () => {
                 </div>
               </div>
 
+              {/* Booking Issue Section */}
+              {user.role?.toLowerCase() === 'student' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button
+                    className={styles['action-btn']}
+                    onClick={() => navigate('/report')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      boxShadow: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.9rem',
+                      opacity: 0.8
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>report</span>
+                    Report Bookings
+                  </button>
+                </div>
+              )}
+
             </section>
           </div>
         </div>

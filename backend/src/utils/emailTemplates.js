@@ -380,11 +380,148 @@ const getBookingCancellationTemplate = ({
   
   return getBaseTemplate(content, 'Booking Cancelled - İTÜ Study Space Finder');
 };
+/**
+ * Report notification email template
+ * @param {Object} data - Email data
+ * @param {string} data.fullName - User's full name
+ * @param {string} data.spaceName - Study space name
+ * @param {string} data.roomNumber - Room number
+ * @param {string} data.buildingName - Building name
+ * @param {string} data.date - Booking date (formatted)
+ * @param {string} data.startTime - Booking start time (formatted)
+ * @param {string} data.endTime - Booking end time (formatted)
+ * @param {string} data.defenseUrl - URL to submit defense
+ * @returns {string} HTML email
+ */
+const getReportNotificationTemplate = ({
+  fullName,
+  spaceName,
+  roomNumber,
+  buildingName,
+  date,
+  startTime,
+  endTime,
+  defenseUrl,
+}) => {
+  const content = `
+    <h2 style="margin: 0 0 20px 0; color: #dc2626;">Reservation Report Notification</h2>
+    
+    <p>Hello <strong>${fullName}</strong>,</p>
+    
+    <p>Your booking has been reported by another student. This is a notification for informational purposes.</p>
+    
+    <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h3 style="margin: 0 0 15px 0; color: #dc2626;">Reported Booking Details</h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Space:</td>
+          <td style="padding: 8px 0; color: #111827;">${spaceName} (Room ${roomNumber})</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Location:</td>
+          <td style="padding: 8px 0; color: #111827;">${buildingName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Date:</td>
+          <td style="padding: 8px 0; color: #111827;">${date}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Time:</td>
+          <td style="padding: 8px 0; color: #111827;">${startTime} - ${endTime}</td>
+        </tr>
+      </table>
+    </div>
+    
+    <div class="info-box" style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0; font-size: 14px;">
+        If you believe this report is incorrect, you can submit your explanation using the button below. Your response will be reviewed by administrators.
+      </p>
+    </div>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${defenseUrl}" class="button" style="display: inline-block; padding: 14px 32px; background-color: #3b82f6; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600;">Submit Your Explanation</a>
+    </div>
+    
+    <div class="warning-box" style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Important:</strong> This report will be reviewed by administrators. Repeated confirmed reports may result in account suspension.
+      </p>
+    </div>
+    
+    <div class="divider"></div>
+  `;
+  
+  return getBaseTemplate(content, 'Booking Report Notification - İTÜ Study Space Finder');
+};
+
+/**
+ * Booking reminder email template
+ * @param {Object} data - Email data
+ * @param {string} data.fullName - User's full name
+ * @param {string} data.confirmationNumber - Booking confirmation number
+ * @param {string} data.spaceName - Study space name
+ * @param {string} data.roomNumber - Room number
+ * @param {string} data.buildingName - Building name
+ * @param {string} data.timeRemaining - Time remaining until booking (e.g. "1 hour")
+ * @param {string} data.startTime - Booking start time (formatted)
+ * @returns {string} HTML email
+ */
+const getBookingReminderTemplate = ({
+  fullName,
+  confirmationNumber,
+  spaceName,
+  roomNumber,
+  buildingName,
+  timeRemaining,
+  startTime,
+}) => {
+  const content = `
+    <h2 style="margin: 0 0 20px 0; color: #1e3a8a;">Upcoming Booking Reminder</h2>
+    
+    <p>Hello <strong>${fullName}</strong>,</p>
+    
+    <p>This is a reminder that your study space booking starts in approximately <strong>${timeRemaining}</strong>.</p>
+    
+    <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h3 style="margin: 0 0 15px 0; color: #1e3a8a;">Booking Details</h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Space:</td>
+          <td style="padding: 8px 0; color: #111827;">${spaceName} (Room ${roomNumber})</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Location:</td>
+          <td style="padding: 8px 0; color: #111827;">${buildingName}</td>
+        </tr>
+         <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Start Time:</td>
+          <td style="padding: 8px 0; color: #111827;">${startTime}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Confirmation:</td>
+          <td style="padding: 8px 0; color: #111827;">${confirmationNumber}</td>
+        </tr>
+      </table>
+    </div>
+    
+    <div class="info-box" style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Need to cancel?</strong> Please log in to your account to cancel if you can no longer make it, so other students can use the space.
+      </p>
+    </div>
+    
+    <div class="divider"></div>
+  `;
+  
+  return getBaseTemplate(content, 'Booking Reminder - İTÜ Study Space Finder');
+};
 
 module.exports = {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
   getBookingConfirmationTemplate,
   getBookingCancellationTemplate,
+  getReportNotificationTemplate,
+  getBookingReminderTemplate,
 };
 

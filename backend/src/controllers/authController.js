@@ -286,13 +286,40 @@ const login = async (req, res, next) => {
     }
 
     if (user.status === 'Suspended') {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'FORBIDDEN',
-          message: 'Account is suspended',
-        },
-      });
+      // Check if suspension has expired
+      if (user.suspended_until) {
+        const now = new Date();
+        const suspendedUntil = new Date(user.suspended_until);
+        
+        if (now > suspendedUntil) {
+          // Suspension expired - auto restore
+          await userModel.update(user.user_id, {
+            status: 'Verified',
+            suspended_until: null
+          });
+          // Continue with login - user is now restored
+          console.log(`User ${user.email} auto-restored from suspension`);
+        } else {
+          // Still suspended
+          return res.status(403).json({
+            success: false,
+            error: {
+              code: 'ACCOUNT_SUSPENDED',
+              message: 'Your account has been suspended',
+              suspendedUntil: suspendedUntil.toISOString(),
+            },
+          });
+        }
+      } else {
+        // No expiry date - permanent suspension
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'ACCOUNT_SUSPENDED',
+            message: 'Your account has been suspended',
+          },
+        });
+      }
     }
 
     if (user.status === 'Deleted') {

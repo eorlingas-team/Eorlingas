@@ -612,6 +612,145 @@ const findFutureBySpaceIdWithUser = async (spaceId, fromTime, transaction = null
   }
 };
 
+/**
+ * Find confirmed bookings for a space that overlap with a time slot
+ * @param {number} spaceId
+ * @param {Date} startTime
+ * @param {Date} endTime
+ * @returns {Array} Array of bookings with user details
+ */
+const findBySpaceAndTime = async (spaceId, startTime, endTime) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      WHERE b.space_id = $1 
+        AND b.status = 'Confirmed'
+        AND (b.start_time < $3 AND b.end_time > $2)
+      ORDER BY b.start_time ASC`,
+      [spaceId, startTime, endTime]
+    );
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.user = {
+        email: row.email,
+        fullName: row.full_name,
+        notificationPreferences: row.notification_preferences
+      };
+      return booking;
+    });
+  } catch (error) {
+    console.error('Error finding bookings by space and time:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find active confirmed booking for a space at a specific timestamp
+ * @param {number} spaceId
+ * @param {Date} timestamp
+ * @returns {Object|null} Booking with user details or null
+ */
+const findActiveAtTime = async (spaceId, timestamp) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      WHERE b.space_id = $1 
+        AND b.status IN ('Confirmed', 'Completed')
+        AND b.start_time <= $2 AND b.end_time > $2`,
+      [spaceId, timestamp]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    const booking = formatBooking(row);
+    booking.user = {
+      email: row.email,
+      fullName: row.full_name,
+      notificationPreferences: row.notification_preferences
+    };
+    return booking;
+  } catch (error) {
+    console.error('Error finding active booking at time:', error);
+    throw error;
+  }
+};
+
+
+/**
+ * Find bookings that need a reminder sent
+ * Logic: Start time is between NOW and NOW + 70 minutes (approx 1 hour away)
+ * And reminder_sent is FALSE
+ * @returns {Array} Array of bookings with user/space details
+ */
+const findBookingsNeedingReminder = async () => {
+  try {
+    const query = `
+      SELECT 
+        b.*,
+        u.email, u.full_name, u.notification_preferences,
+        s.space_name, s.room_number,
+        bu.building_name
+      FROM bookings b
+      INNER JOIN users u ON b.user_id = u.user_id
+      INNER JOIN study_spaces s ON b.space_id = s.space_id
+      INNER JOIN buildings bu ON s.building_id = bu.building_id
+      WHERE b.status = 'Confirmed'
+        AND b.reminder_sent = FALSE
+        AND b.start_time > NOW()
+        AND b.start_time <= (NOW() + interval '70 minutes')
+    `;
+
+    const result = await pool.query(query);
+
+    return result.rows.map(row => {
+      const booking = formatBooking(row);
+      booking.user = {
+        email: row.email,
+        fullName: row.full_name,
+        notificationPreferences: row.notification_preferences
+      };
+      booking.space = {
+        spaceName: row.space_name,
+        roomNumber: row.room_number,
+        building: {
+          buildingName: row.building_name
+        }
+      };
+      return booking;
+    });
+  } catch (error) {
+    console.error('Error finding bookings needing reminder:', error);
+    throw error;
+  }
+};
+
+/**
+ * Mark booking reminder as sent
+ * @param {number} bookingId 
+ */
+const markReminderSent = async (bookingId) => {
+  try {
+    await pool.query(
+      'UPDATE bookings SET reminder_sent = TRUE WHERE booking_id = $1',
+      [bookingId]
+    );
+  } catch (error) {
+    console.error('Error marking reminder sent:', error);
+    throw error;
+  }
+};
 
 module.exports = {
   findById,
@@ -628,4 +767,8 @@ module.exports = {
   findUpcomingBySpaceIdWithUser,
   findOverlappingBySpaceIdWithUser,
   findFutureBySpaceIdWithUser,
+  findBySpaceAndTime,
+  findActiveAtTime,
+  findBookingsNeedingReminder,
+  markReminderSent,
 };

@@ -63,7 +63,8 @@ const TimeSlotGrid = ({
     const minutesToTime = (minutes) => {
         const h = Math.floor(minutes / 60);
         const m = minutes % 60;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        const displayH = h === 24 ? 0 : h;
+        return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     };
 
     // Generate all slots for the day
