@@ -18,7 +18,9 @@ const escapeHtml = require('escape-html');
 const {
   sendVerificationEmail: sendVerificationEmailService,
   sendPasswordResetEmail: sendPasswordResetEmailService,
+  sendAccountRecoveryEmail: sendAccountRecoveryEmailService,
 } = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 const logAuditEvent = require('../utils/auditLogger');
 const { getIstanbulNow } = require('../utils/dateHelpers');
 const { formatInTimeZone } = require('date-fns-tz');
@@ -297,8 +299,28 @@ const login = async (req, res, next) => {
             status: 'Verified',
             suspended_until: null
           });
+          
+          // Send in-app notification
+          notificationService.createNotification(user.user_id, 'Account_Recovery', {
+            subject: 'Account Restored',
+            message: 'Your suspension period has ended. Your account has been automatically restored. You can now make new bookings.'
+          }).catch((err) => {
+            console.error('Failed to send auto-recovery notification:', err);
+          });
+
+          // Send email notification
+          if (user.email) {
+            sendAccountRecoveryEmailService({
+              to: user.email,
+              fullName: user.full_name
+            }).catch((err) => {
+              console.error('Failed to send auto-recovery email:', err);
+            });
+          }
+
           // Continue with login - user is now restored
           console.log(`User ${user.email} auto-restored from suspension`);
+          user.status = 'Verified'; // Update local object for the rest of login logic
         } else {
              console.log(`Suspended user ${user.email} logged in. Suspension until: ${suspendedUntil}`);
         }

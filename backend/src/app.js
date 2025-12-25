@@ -37,4 +37,5 @@ app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/cron', require('./routes/cronRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 module.exports = app;

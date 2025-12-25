@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const bookingModel = require('../models/bookingModel');
 const userModel = require('../models/userModel');
 const emailService = require('./emailService');
+const notificationService = require('./notificationService');
 const { getIstanbulNow, getIstanbulHourMinute, ISTANBUL_TZ } = require('../utils/dateHelpers');
 const { addDays } = require('date-fns');
 const { toZonedTime } = require('date-fns-tz');
@@ -362,6 +363,17 @@ const createBooking = async (userId, bookingData) => {
             console.error('Failed to send booking confirmation email:', err);
           });
         }
+
+        // Send in-app notification
+        notificationService.createNotification(userId, 'Booking_Confirmation', {
+          subject: 'Booking Confirmed',
+          message: `Your booking for ${bookingWithSpace.space.spaceName} has been confirmed.`,
+          bookingId: bookingWithSpace.bookingId,
+          relatedEntityId: bookingWithSpace.bookingId,
+          relatedEntityType: 'Booking'
+        }).catch((err) => {
+          console.error('Failed to send booking confirmation notification:', err);
+        });
       }
     } catch (emailError) {
       console.error('Error sending booking confirmation email:', emailError);
@@ -456,6 +468,17 @@ const cancelBooking = async (bookingId, userId, cancellationReason = 'User_Reque
             console.error('Failed to send booking cancellation email:', err);
           });
         }
+
+        // Send in-app notification
+        notificationService.createNotification(booking.userId, 'Booking_Cancellation', {
+          subject: 'Booking Cancelled',
+          message: `Your booking for ${bookingWithSpace.space.spaceName} has been cancelled.`,
+          bookingId: bookingId,
+          relatedEntityId: bookingId,
+          relatedEntityType: 'Booking'
+        }).catch((err) => {
+          console.error('Failed to send booking cancellation notification:', err);
+        });
       }
     } catch (emailError) {
       console.error('Error sending booking cancellation email:', emailError);

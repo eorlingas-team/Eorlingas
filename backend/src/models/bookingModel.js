@@ -752,6 +752,15 @@ const markReminderSent = async (bookingId) => {
   }
 };
 
+/**
+ * Find upcoming confirmed bookings for a user
+ * @param {number} userId
+ * @returns {Array} Array of bookings
+ */
+const findUpcomingByUserId = async (userId) => {
+  return await findByUserId(userId, { type: 'upcoming' });
+};
+
 module.exports = {
   findById,
   findByUserId,
@@ -771,4 +780,5 @@ module.exports = {
   findActiveAtTime,
   findBookingsNeedingReminder,
   markReminderSent,
+  findUpcomingByUserId,
 };

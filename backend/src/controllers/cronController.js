@@ -1,5 +1,6 @@
 const bookingModel = require('../models/bookingModel');
 const emailService = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 
 /**
  * Cron job handler to send booking reminders
@@ -31,6 +32,15 @@ const sendReminders = async (req, res) => {
           to: booking.user.email,
           fullName: booking.user.fullName,
           booking: booking
+        });
+
+        // Send in-app notification
+        await notificationService.createNotification(booking.userId, 'Booking_Reminder', {
+          subject: 'Booking Reminder',
+          message: `Reminder: Your booking for ${booking.space.spaceName} is in 1 hour.`,
+          bookingId: booking.bookingId,
+          relatedEntityId: booking.bookingId,
+          relatedEntityType: 'Booking'
         });
 
         await bookingModel.markReminderSent(booking.bookingId);

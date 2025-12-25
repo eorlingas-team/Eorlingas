@@ -570,6 +570,42 @@ const getAccountSuspensionTemplate = ({
 };
 
 
+/**
+ * Account recovery email template
+ * @param {Object} data - Email data
+ * @param {string} data.fullName - User's full name
+ * @returns {string} HTML email
+ */
+const getAccountRecoveryTemplate = ({ fullName }) => {
+  const content = `
+    <h2 style="margin: 0 0 20px 0; color: #16a34a;">Account Restored</h2>
+    
+    <p>Hello <strong>${fullName}</strong>,</p>
+    
+    <p>We are pleased to inform you that your account has been restored.</p>
+    
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <h3 style="margin: 0 0 15px 0; color: #16a34a;">Status Update</h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Current Status:</td>
+          <td style="padding: 8px 0; color: #16a34a; font-weight: 700;">Verified (Active)</td>
+        </tr>
+      </table>
+    </div>
+    
+    <p>Your suspension period has ended. You can now log in and make new study space bookings through the system.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="https://itu-study-spaces.onrender.com/login" class="button" style="background-color: #16a34a;">Log In Now</a>
+    </div>
+        
+    <div class="divider"></div>
+  `;
+  
+  return getBaseTemplate(content, 'Account Restored - İTÜ Study Space Finder');
+};
+
 module.exports = {
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
@@ -578,4 +614,5 @@ module.exports = {
   getReportNotificationTemplate,
   getBookingReminderTemplate,
   getAccountSuspensionTemplate,
+  getAccountRecoveryTemplate,
 };

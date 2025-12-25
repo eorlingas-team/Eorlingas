@@ -54,8 +54,12 @@ CREATE TYPE notification_type AS ENUM (
     'Booking_Reminder',
     'Booking_Cancellation',
     'Administrative_Cancellation',
+    'Administrative_Action',
     'Account_Security',
-    'Password_Reset'
+    'Password_Reset',
+    'Report',
+    'Account_Suspension',
+    'Account_Recovery'
 );
 CREATE TYPE notification_status AS ENUM ('Pending', 'Sent', 'Failed', 'Retry_Queued');
 
@@ -266,8 +270,9 @@ CREATE TABLE notifications (
     message           TEXT                NOT NULL,
     status            notification_status NOT NULL DEFAULT 'Pending',
 
-    sent_at     TIMESTAMP WITH TIME ZONE,
-    retry_count INTEGER DEFAULT 0,
+    is_read           BOOLEAN             NOT NULL DEFAULT FALSE,
+    related_entity_id INTEGER,
+    related_entity_type VARCHAR(50),
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
@@ -371,6 +376,11 @@ CREATE INDEX idx_audit_logs_timestamp
 CREATE INDEX idx_notifications_pending
     ON notifications (status)
     WHERE status IN ('Pending', 'Retry_Queued');
+
+-- Unread notifications for a user
+CREATE INDEX idx_notifications_user_unread 
+    ON notifications(user_id, is_read) 
+    WHERE is_read = FALSE;
 
 -- Optional: retry count index
 CREATE INDEX idx_notifications_retry_count

@@ -8,6 +8,7 @@ import { AdminProvider } from '../contexts/AdminContext';
 import { SpaceManagerProvider } from '../contexts/SpaceManagerContext';
 import { ToastProvider } from '../contexts/ToastContext';
 import { ConfirmProvider } from '../contexts/ConfirmContext';
+import { NotificationProvider } from '../contexts/NotificationContext';
 
 export const AppProviders = ({ children }) => {
     return (
@@ -16,15 +17,17 @@ export const AppProviders = ({ children }) => {
                 <ConfirmProvider>
                     <ToastProvider>
                         <AuthProvider>
-                            <AdminProvider>
-                                <SpaceManagerProvider>
-                                    <BookingProvider>
-                                        <SpacesProvider>
-                                            {children}
-                                        </SpacesProvider>
-                                    </BookingProvider>
-                                </SpaceManagerProvider>
-                            </AdminProvider>
+                            <NotificationProvider>
+                                <AdminProvider>
+                                    <SpaceManagerProvider>
+                                        <BookingProvider>
+                                            <SpacesProvider>
+                                                {children}
+                                            </SpacesProvider>
+                                        </BookingProvider>
+                                    </SpaceManagerProvider>
+                                </AdminProvider>
+                            </NotificationProvider>
                         </AuthProvider>
                     </ToastProvider>
                 </ConfirmProvider>

@@ -2,6 +2,7 @@ const reportModel = require('../models/reportModel');
 const bookingModel = require('../models/bookingModel');
 const userModel = require('../models/userModel');
 const emailService = require('./emailService');
+const notificationService = require('./notificationService');
 
 /**
  * Validate and create a new report
@@ -67,6 +68,18 @@ const createReport = async (reporterId, reportData) => {
         defenseToken: report.defenseToken,
       });
     }
+
+    // Send in-app notification
+    notificationService.createNotification(booking.userId, 'Report', {
+      subject: 'New Report Filed',
+      message: 'A report has been filed against your booking. You can submit a defense.',
+      bookingId: booking.bookingId,
+      relatedEntityId: report.reportId,
+      relatedEntityType: 'Report',
+      relatedData: { defenseToken: report.defenseToken }
+    }).catch((err) => {
+      console.error('Failed to send report notification:', err);
+    });
   } catch (emailError) {
     console.error('Failed to send report notification email:', emailError);
     // Don't throw - report was created successfully

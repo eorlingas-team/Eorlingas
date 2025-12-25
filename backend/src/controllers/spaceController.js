@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const recommendationService = require('../services/recommendationService');
 const bookingModel = require('../models/bookingModel');
 const emailService = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 const logAuditEvent = require('../utils/auditLogger');
 const { toIstanbulDate, getIstanbulHourMinute, getIstanbulNow } = require('../utils/dateHelpers');
 const { addDays } = require('date-fns');
@@ -724,25 +725,36 @@ exports.updateSpace = async (req, res) => {
       afterState: formatSpace(updatedSpace)
     });
 
-    // 4. Send Notification Emails (Async)
+    // 4. Send Notification Emails & In-App Notifications (Async)
     if (affectedBookings.length > 0) {
       Promise.all(affectedBookings.map(async (booking) => {
         try {
-          if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
-            const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
-            if (fullBooking) {
-              fullBooking.cancellationReason = 'Space_Maintenance';
+          const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
+          if (fullBooking) {
+            fullBooking.cancellationReason = 'Space_Maintenance';
+
+            // 1. Send Email if preferred
+            if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
               await emailService.sendBookingCancellationEmail({
                 to: booking.user.email,
                 fullName: booking.user.fullName,
                 booking: fullBooking
               });
             }
+
+            // 2. Send In-App Notification
+            await notificationService.createNotification(booking.userId, 'Booking_Cancellation', {
+              subject: 'Booking Cancelled (Maintenance)',
+              message: `Your booking at ${fullBooking.space.spaceName} has been cancelled due to scheduled maintenance.`,
+              bookingId: booking.bookingId,
+              relatedEntityId: booking.bookingId,
+              relatedEntityType: 'Booking'
+            });
           }
-        } catch (emailErr) {
-          console.error(`Failed to send maintenance cancellation email for booking ${booking.bookingId}:`, emailErr);
+        } catch (err) {
+          console.error(`Failed to notify user for booking ${booking.bookingId}:`, err);
         }
-      })).catch(err => console.error('Error in batch maintenance email processing:', err));
+      })).catch(err => console.error('Error in batch maintenance notification processing:', err));
     }
 
     res.status(200).json({
@@ -815,28 +827,36 @@ exports.deleteSpace = async (req, res) => {
       afterState: { status: 'Deleted', deletedAt: formatInTimeZone(getIstanbulNow(), 'Europe/Istanbul', "yyyy-MM-dd'T'HH:mm:ssXXX") }
     });
 
-    // 5. Send Cancellation Emails (Async, outside transaction)
+    // 5. Send Cancellation Emails & In-App Notifications (Async)
     if (upcomingBookings.length > 0) {
-      // Background email sending
       Promise.all(upcomingBookings.map(async (booking) => {
         try {
-          // If the user has email notifications enabled
-          if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
-            const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
-            if (fullBooking) {
-              // Set the cancellation reason to Administrative for the email
-              fullBooking.cancellationReason = 'Administrative';
+          const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
+          if (fullBooking) {
+            fullBooking.cancellationReason = 'Administrative';
+
+            // 1. Send Email if preferred
+            if (booking.user.emailVerified && booking.user.notificationPreferences?.emailNotifications !== false) {
               await emailService.sendBookingCancellationEmail({
                 to: booking.user.email,
                 fullName: booking.user.fullName,
                 booking: fullBooking
               });
             }
+
+            // 2. Send In-App Notification
+            await notificationService.createNotification(booking.userId, 'Booking_Cancellation', {
+              subject: 'Booking Cancelled (Space Deleted)',
+              message: `Your booking at ${fullBooking.space.spaceName} has been cancelled because the space was removed by an administrator.`,
+              bookingId: booking.bookingId,
+              relatedEntityId: booking.bookingId,
+              relatedEntityType: 'Booking'
+            });
           }
-        } catch (emailErr) {
-          console.error(`Failed to send cancellation email for booking ${booking.bookingId}:`, emailErr);
+        } catch (err) {
+          console.error(`Failed to notify user for booking ${booking.bookingId}:`, err);
         }
-      })).catch(err => console.error('Error in batch email processing:', err));
+      })).catch(err => console.error('Error in batch deletion notification processing:', err));
     }
 
     res.status(200).json({

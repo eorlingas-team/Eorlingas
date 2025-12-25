@@ -2,10 +2,12 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const userModel = require('../models/userModel');
+const bookingModel = require('../models/bookingModel');
 const validationSchemas = require('../utils/validationSchemas');
 const { getIstanbulNow } = require('../utils/dateHelpers');
 const { formatInTimeZone } = require('date-fns-tz');
 const emailService = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 
 // --- Helper Functions ---
 
@@ -370,17 +372,22 @@ const updateUser = async (req, res) => {
         break;
 
       case 'suspend':
-        // Cancel all active bookings
-        await db.query(
-          `UPDATE bookings 
-           SET status = 'Cancelled', 
-               cancelled_at = NOW(),
-               cancellation_reason = 'Administrative'
-           WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
-          [userId]
-        );
+        // 1. Find all future confirmed bookings for this user
+        const upcomingBookings = await bookingModel.findUpcomingByUserId(userId);
         
-        // Set 1 week suspension
+        // 2. Cancel them
+        if (upcomingBookings.length > 0) {
+          await db.query(
+            `UPDATE bookings 
+             SET status = 'Cancelled', 
+                 cancelled_at = NOW(),
+                 cancellation_reason = 'Administrative'
+             WHERE user_id = $1 AND status = 'Confirmed' AND start_time > NOW()`,
+            [userId]
+          );
+        }
+        
+        // 3. Set 1 week suspension
         const suspendedUntil = new Date();
         suspendedUntil.setDate(suspendedUntil.getDate() + 7);
         
@@ -389,7 +396,7 @@ const updateUser = async (req, res) => {
           suspended_until: suspendedUntil
         });
         
-        // Send suspension email notification
+        // 4. Send suspension email notification
         if (user.email) {
             await emailService.sendAccountSuspensionEmail({
                 to: user.email,
@@ -397,6 +404,45 @@ const updateUser = async (req, res) => {
                 suspendedUntil: suspendedUntil,
                 reason: 'Administrative Action'
             });
+        }
+        
+        // 5. Send in-app notification for suspension
+        await notificationService.createNotification(userId, 'Account_Suspension', {
+          subject: 'Account Suspended',
+          message: `Your account has been suspended until ${suspendedUntil.toLocaleDateString()}. Reason: Administrative Action. All your upcoming bookings have been cancelled.`
+        }).catch((err) => {
+          console.error('Failed to send suspension notification:', err);
+        });
+
+        // 6. Send individual notifications/emails for each cancelled booking (Async)
+        if (upcomingBookings.length > 0) {
+          Promise.all(upcomingBookings.map(async (booking) => {
+            try {
+              const fullBooking = await bookingModel.findByIdWithSpace(booking.bookingId);
+              if (fullBooking) {
+                // In-app notification for specific booking
+                await notificationService.createNotification(userId, 'Booking_Cancellation', {
+                  subject: 'Booking Cancelled (Account Suspended)',
+                  message: `Your booking at ${fullBooking.space.spaceName} on ${new Date(fullBooking.startTime).toLocaleDateString()} has been cancelled due to account suspension.`,
+                  bookingId: booking.bookingId,
+                  relatedEntityId: booking.bookingId,
+                  relatedEntityType: 'Booking'
+                });
+
+                // Email if preferred
+                if (user.email && user.notification_preferences?.emailNotifications !== false) {
+                  fullBooking.cancellationReason = 'Administrative';
+                  await emailService.sendBookingCancellationEmail({
+                    to: user.email,
+                    fullName: user.full_name,
+                    booking: fullBooking
+                  });
+                }
+              }
+            } catch (err) {
+              console.error(`Failed to notify user for booking ${booking.bookingId} during suspension:`, err);
+            }
+          })).catch(err => console.error('Error in batch suspension notification processing:', err));
         }
         
         await logAuditEvent({
@@ -416,6 +462,22 @@ const updateUser = async (req, res) => {
           status: 'Verified',
           suspended_until: null
         });
+
+        // Send in-app notification
+        notificationService.createNotification(userId, 'Account_Recovery', {
+          subject: 'Account Restored',
+          message: 'Your account has been restored. You can now make new bookings.'
+        }).catch((err) => {
+          console.error('Failed to send recovery notification:', err);
+        });
+
+        // Send email notification
+        if (user.email) {
+            await emailService.sendAccountRecoveryEmail({
+                to: user.email,
+                fullName: user.full_name
+            });
+        }
 
         await logAuditEvent({
           userId: req.user?.userId || null,
