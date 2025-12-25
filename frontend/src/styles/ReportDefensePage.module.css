@@ -59,6 +59,23 @@
   color: var(--text-primary);
 }
 
+.report-description {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.description-text {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .warning-box {
   display: flex;
   gap: 12px;

@@ -20,6 +20,14 @@ const UserManagementPage = () => {
   const [localSearch, setLocalSearch] = useState('');
   const [activeRolePopup, setActiveRolePopup] = useState(null);
   const [popoverOpenUpward, setPopoverOpenUpward] = useState({});
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({
+    email: '',
+    fullName: '',
+    studentNumber: '',
+    phoneNumber: ''
+  });
 
   useEffect(() => {
     handleClearFilters();
@@ -142,6 +150,33 @@ const UserManagementPage = () => {
     });
   };
 
+  const handleEditClick = (user) => {
+    setEditingUser(user);
+    setEditForm({
+      email: cleanDeletedField(user.email) || '',
+      fullName: user.fullName || '',
+      studentNumber: cleanDeletedField(user.studentNumber) || '',
+      phoneNumber: user.phoneNumber || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditChange = (e) => {
+    setEditForm({ ...editForm, [e.target.name]: e.target.value });
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    const result = await actions.updateUser(editingUser.userId, 'updateInfo', editForm);
+    if (result.success) {
+      addToast('User updated successfully', "success");
+      setIsEditModalOpen(false);
+      setEditingUser(null);
+    } else {
+      addToast(result.error, "error");
+    }
+  };
+
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [newUserForm, setNewUserForm] = useState({
     email: '',
@@ -248,6 +283,18 @@ const UserManagementPage = () => {
       sortable: false,
       render: (user) => (
         <div className={`${styles['action-buttons-wrapper']}`}>
+          {/* Edit Info Button */}
+          <button
+            className={`${styles['action-icon-btn']} ${styles.edit}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEditClick(user);
+            }}
+            title="Edit User Info"
+          >
+            <span className={`material-symbols-outlined`} style={{ fontSize: '20px' }}>edit</span>
+          </button>
+
           {/* Change Role Button & Popover */}
           <div style={{ position: 'relative' }}>
             <button
@@ -526,6 +573,77 @@ const UserManagementPage = () => {
           </div>
         </div>
       )}
+      {/* Edit User Modal */}
+      {isEditModalOpen && (
+        <div className={`${styles['modal-overlay']}`} onClick={() => setIsEditModalOpen(false)}>
+          <div className={`${styles['modal-content']}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`${styles['modal-header']}`}>
+              <h2 className={`${styles['modal-title']}`}>Edit User Information</h2>
+              <button className={`${styles['modal-close-btn']}`} onClick={() => setIsEditModalOpen(false)}>
+                <span className={`material-symbols-outlined`}>close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
+              <div className={`${styles['form-group']}`}>
+                <label className={`${styles['form-label']}`}>Full Name *</label>
+                <input
+                  type="text"
+                  name="fullName"
+                  className={`${styles['form-input']}`}
+                  value={editForm.fullName}
+                  onChange={handleEditChange}
+                  required
+                />
+              </div>
+
+              <div className={`${styles['form-group']}`}>
+                <label className={`${styles['form-label']}`}>Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  className={`${styles['form-input']}`}
+                  value={editForm.email}
+                  onChange={handleEditChange}
+                  required
+                />
+              </div>
+
+              <div className={`${styles['form-group']}`}>
+                <label className={`${styles['form-label']}`}>Student Number</label>
+                <input
+                  type="text"
+                  name="studentNumber"
+                  className={`${styles['form-input']}`}
+                  value={editForm.studentNumber}
+                  onChange={handleEditChange}
+                />
+              </div>
+
+              <div className={`${styles['form-group']}`}>
+                <label className={`${styles['form-label']}`}>Phone Number</label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  className={`${styles['form-input']}`}
+                  value={editForm.phoneNumber}
+                  onChange={handleEditChange}
+                />
+              </div>
+
+              <div className={`${styles['modal-footer']}`}>
+                <button type="button" className={`${styles['btn-cancel']}`} onClick={() => setIsEditModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className={`${styles['btn-submit']}`}>
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Popover Backdrop  */}
       {activeRolePopup && (
         <div className={`${styles['popover-backdrop']}`} onClick={() => setActiveRolePopup(null)} />
