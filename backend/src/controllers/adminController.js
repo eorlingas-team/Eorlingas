@@ -528,6 +528,46 @@ const updateUser = async (req, res) => {
           }
         });
 
+      case 'updateInfo':
+        if (!params) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'No params provided' }
+          });
+        }
+        
+        const infoUpdates = {};
+        if (params.email) infoUpdates.email = params.email;
+        if (params.fullName) infoUpdates.full_name = params.fullName;
+        if (params.studentNumber) infoUpdates.student_number = params.studentNumber;
+        if (params.phoneNumber !== undefined) infoUpdates.phone_number = params.phoneNumber;
+        
+        if (Object.keys(infoUpdates).length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'No valid fields to update' }
+          });
+        }
+        
+        updatedUser = await userModel.update(userId, infoUpdates);
+        
+        await logAuditEvent({
+          userId: req.user?.userId || null,
+          actionType: 'User_Updated',
+          targetEntityType: 'User',
+          targetEntityId: userId,
+          ipAddress: req.ip || req.connection.remoteAddress,
+          result: 'Success',
+          beforeState: { 
+            email: user.email, 
+            fullName: user.full_name, 
+            studentNumber: user.student_number, 
+            phoneNumber: user.phone_number 
+          },
+          afterState: infoUpdates
+        });
+        break;
+
       default:
         return res.status(400).json({
           success: false,

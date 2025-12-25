@@ -129,6 +129,12 @@ const ReportDefensePage = () => {
                                 </span>
                             </div>
                         </div>
+                        {report?.message && (
+                            <div className={styles['report-description']}>
+                                <span className={styles['info-label']}>Complaint Details</span>
+                                <p className={styles['description-text']}>{report.message}</p>
+                            </div>
+                        )}
                     </div>
 
                     {submitted ? (

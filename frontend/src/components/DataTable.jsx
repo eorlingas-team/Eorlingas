@@ -195,19 +195,21 @@ const DataTable = ({
             <div className={`${styles['filter-panel']}`}>
                 <div className={`${styles['filter-row']}`}>
                     {/* Search Wrapper */}
-                    <div className={`${styles['search-wrapper']}`}>
-                        <label className={`${styles['filter-label']}`}>Search</label>
-                        <div className={`${styles['search-input-container']}`}>
-                            <span className={`material-symbols-outlined ${styles['search-icon']}`}>search</span>
-                            <input
-                                type="text"
-                                className={`${styles['search-input']}`}
-                                placeholder={searchPlaceholder}
-                                value={searchTerm}
-                                onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
-                            />
+                    {onSearchChange && (
+                        <div className={`${styles['search-wrapper']}`}>
+                            <label className={`${styles['filter-label']}`}>Search</label>
+                            <div className={`${styles['search-input-container']}`}>
+                                <span className={`material-symbols-outlined ${styles['search-icon']}`}>search</span>
+                                <input
+                                    type="text"
+                                    className={`${styles['search-input']}`}
+                                    placeholder={searchPlaceholder}
+                                    value={searchTerm}
+                                    onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
+                                />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Dynamic Filters */}
                     {filters.map((filter, index) => (

@@ -660,9 +660,15 @@ const findActiveAtTime = async (spaceId, timestamp) => {
     const result = await pool.query(
       `SELECT 
         b.*,
-        u.email, u.full_name, u.notification_preferences
+        u.email, u.full_name, u.notification_preferences,
+        s.space_name, s.room_number,
+        bu.building_name,
+        c.campus_name
       FROM bookings b
       INNER JOIN users u ON b.user_id = u.user_id
+      INNER JOIN study_spaces s ON b.space_id = s.space_id
+      INNER JOIN buildings bu ON s.building_id = bu.building_id
+      INNER JOIN campuses c ON bu.campus_id = c.campus_id
       WHERE b.space_id = $1 
         AND b.status IN ('Confirmed', 'Completed')
         AND b.start_time <= $2 AND b.end_time > $2`,
@@ -679,6 +685,18 @@ const findActiveAtTime = async (spaceId, timestamp) => {
       email: row.email,
       fullName: row.full_name,
       notificationPreferences: row.notification_preferences
+    };
+    booking.space = {
+      spaceName: row.space_name,
+      roomNumber: row.room_number,
+      buildingName: row.building_name,
+      campusName: row.campus_name,
+      building: {
+        buildingName: row.building_name,
+        campus: {
+          campusName: row.campus_name
+        }
+      }
     };
     return booking;
   } catch (error) {
