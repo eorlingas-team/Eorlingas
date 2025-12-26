@@ -7,16 +7,19 @@
   
   --status-green: #0bda5b;
   --status-red: #fa6238;
+  --status-orange: #f59e0b;
   --success-color: #22c55e;
   --danger-color: #ef4444;
   --error-color: #ef4444;
   --success-bg: #dcfce7;
   --success-text: #15803d;
+  --primary-rgb: 43, 140, 238;
 
   --bg-primary: #f6f7f8;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
   --bg-tertiary: #f3f4f6;
+  --bg-hover: var(--bg-tertiary);
   
   --text-main: #111827;
   --text-secondary: #6b7280;
@@ -31,6 +34,7 @@
   
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 [data-theme='dark'] {
@@ -54,6 +58,7 @@
   
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
 }
 
 body {

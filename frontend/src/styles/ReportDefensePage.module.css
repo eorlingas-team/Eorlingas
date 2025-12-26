@@ -1,7 +1,7 @@
 .defense-container {
   min-height: 100vh;
-  background: var(--background-main);
-  color: var(--text-primary);
+  background: var(--bg-primary);
+  color: var(--text-main);
 }
 
 .defense-main {
@@ -23,7 +23,7 @@
 }
 
 .report-info {
-  background: var(--background-card);
+  background: var(--bg-card);
   padding: 20px;
   border-radius: 12px;
   border: 1px solid var(--border-main);
@@ -56,7 +56,7 @@
 
 .info-value {
   font-size: 0.875rem;
-  color: var(--text-primary);
+  color: var(--text-main);
 }
 
 .report-description {
@@ -71,7 +71,7 @@
 .description-text {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-primary);
+  color: var(--text-main);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -101,7 +101,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  background: var(--background-card);
+  background: var(--bg-card);
   padding: 24px;
   border-radius: 12px;
   border: 1px solid var(--border-main);
@@ -125,8 +125,8 @@
   font-size: 0.9375rem;
   border: 1px solid var(--border-main);
   border-radius: 8px;
-  background: var(--background-main);
-  color: var(--text-primary);
+  background: var(--input-bg);
+  color: var(--text-main);
   resize: vertical;
   min-height: 120px;
   transition: border-color 0.2s ease;
@@ -160,7 +160,7 @@
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: var(--primary-dark);
+  background: var(--primary-hover);
 }
 
 .submit-btn:disabled {
@@ -175,7 +175,7 @@
   align-items: center;
   text-align: center;
   padding: 40px;
-  background: var(--background-card);
+  background: var(--bg-card);
   border-radius: 12px;
   border: 1px solid var(--border-main);
 }
@@ -219,7 +219,7 @@
 .submitted-defense {
   margin-top: 24px;
   padding: 16px;
-  background: var(--background-main);
+  background: var(--bg-primary);
   border-radius: 8px;
   width: 100%;
   text-align: left;
