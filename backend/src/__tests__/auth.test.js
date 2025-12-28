@@ -24,6 +24,14 @@ const { getIstanbulNow } = require('../utils/dateHelpers');
 jest.mock('../models/userModel');
 jest.mock('../config/db');
 jest.mock('bcrypt');
+jest.mock('../services/emailService', () => ({
+  sendVerificationEmail: jest.fn().mockResolvedValue({}),
+  sendPasswordResetEmail: jest.fn().mockResolvedValue({}),
+  sendAccountRecoveryEmail: jest.fn().mockResolvedValue({})
+}));
+jest.mock('../services/notificationService', () => ({
+  createNotification: jest.fn().mockResolvedValue({})
+}));
 
 const userModel = require('../models/userModel');
 const pool = require('../config/db');
@@ -659,6 +667,7 @@ describe('Auth Controller', () => {
         })
       );
     });
+
   });
 
   describe('verifyEmail', () => {
@@ -977,6 +986,27 @@ describe('Auth Controller', () => {
         })
       );
     });
+
+    it('should reject refresh access token request with invalid token type', async () => {
+      req.body = { refreshToken: 'valid_access_token' }; 
+      jwtUtils.verifyRefreshToken = jest.fn().mockImplementation(() => { throw new Error('Invalid refresh token'); });
+  
+      await authController.refreshToken(req, res, next);
+  
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('should handle expired refresh token', async () => {
+        req.body = { refreshToken: 'expired_token' };
+        jwtUtils.verifyRefreshToken = jest.fn().mockImplementation(() => { throw new Error('Token expired'); });
+    
+        await authController.refreshToken(req, res, next);
+    
+        expect(res.status).toHaveBeenCalledWith(401);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            error: expect.objectContaining({ code: 'UNAUTHORIZED' })
+        }));
+    });
   });
 
   describe('getMe', () => {
@@ -1048,6 +1078,15 @@ describe('Auth Controller', () => {
           message: 'Logged out successfully',
         })
       );
+    });
+
+    it('should handle logout with invalid token gracefully', async () => {
+        req.body = { refreshToken: 'invalid' };
+        jwtUtils.verifyRefreshToken = jest.fn().mockImplementation(() => { throw new Error('Invalid'); });
+
+        await authController.logout(req, res, next);
+        
+        expect(res.status).toHaveBeenCalledWith(200);
     });
   });
 
@@ -1394,5 +1433,249 @@ describe('Auth Middleware', () => {
       expect(next).toHaveBeenCalled();
     });
   });
+});
+
+describe('Auth Edge Cases & Error Handling', () => {
+    let req, res, next;
+
+    beforeEach(() => {
+        req = {
+            body: {},
+            params: {},
+            query: {},
+            headers: {},
+            ip: '127.0.0.1',
+            connection: { remoteAddress: '127.0.0.1' }
+        };
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn()
+        };
+        next = jest.fn();
+        jest.clearAllMocks();
+    });
+
+    it('should deny login to suspended user (active suspension)', async () => {
+        req.body = { email: 'sus@itu.edu.tr', password: 'Password123!' };
+        const suspendedUntil = new Date();
+        suspendedUntil.setDate(suspendedUntil.getDate() + 1); // Tomorrow
+
+        const mockUser = {
+            user_id: 2,
+            email: 'sus@itu.edu.tr',
+            password_hash: 'hashedpassword',
+            status: 'Suspended',
+            suspended_until: suspendedUntil.toISOString()
+        };
+
+        userModel.findByEmail.mockResolvedValue(mockUser);
+        userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
+        bcrypt.compare.mockResolvedValue(true);
+
+        await authController.login(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({ code: 'FORBIDDEN', message: expect.stringContaining('suspended until') })
+        }));
+    });
+
+    it('should deny login to permanently suspended user', async () => {
+        req.body = { email: 'perm@itu.edu.tr', password: 'Password123!' };
+        
+        const mockUser = {
+            user_id: 3,
+            email: 'perm@itu.edu.tr',
+            password_hash: 'hashedpassword',
+            status: 'Suspended',
+            suspended_until: null // Permanent
+        };
+
+        userModel.findByEmail.mockResolvedValue(mockUser);
+        userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
+        bcrypt.compare.mockResolvedValue(true);
+
+        await authController.login(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({ message: expect.stringContaining('permanently suspended') })
+        }));
+    });
+
+    it('should auto-restore suspended user if time expired during login', async () => {
+        req.body = { email: 'restored@itu.edu.tr', password: 'Password123!' };
+        const suspendedUntil = new Date();
+        suspendedUntil.setDate(suspendedUntil.getDate() - 1); // Yesterday
+
+        const mockUser = {
+            user_id: 4,
+            email: 'restored@itu.edu.tr',
+            password_hash: 'hashedpassword',
+            status: 'Suspended',
+            suspended_until: suspendedUntil.toISOString(),
+            full_name: 'Restored User',
+            role: 'Student'
+        };
+
+        userModel.findByEmail.mockResolvedValue(mockUser);
+        userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
+        bcrypt.compare.mockResolvedValue(true);
+        userModel.update.mockResolvedValue({}); // update
+        userModel.updateLastLogin.mockResolvedValue({});
+        userModel.setRefreshToken.mockResolvedValue({});
+
+        // Mock notification services
+        const notificationService = require('../services/notificationService');
+        const emailService = require('../services/emailService');
+
+        await authController.login(req, res, next);
+
+        // Should restore status
+        expect(userModel.update).toHaveBeenCalledWith(4, expect.objectContaining({ status: 'Verified', suspended_until: null }));
+        // Should notify
+        expect(notificationService.createNotification).toHaveBeenCalled();
+        expect(emailService.sendAccountRecoveryEmail).toHaveBeenCalled();
+        // Should succeed login
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true,
+            data: expect.objectContaining({ user: expect.objectContaining({ status: 'Verified' }) })
+        }));
+    });
+
+    it('should deny login to deleted user', async () => {
+        req.body = { email: 'deleted@itu.edu.tr', password: 'Password123!' };
+        
+        const mockUser = {
+            user_id: 5,
+            email: 'deleted@itu.edu.tr',
+            password_hash: 'hashedpassword',
+            status: 'Deleted'
+        };
+
+        userModel.findByEmail.mockResolvedValue(mockUser);
+        userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
+        bcrypt.compare.mockResolvedValue(true);
+
+        await authController.login(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('should handle JSON parse error in notification preferences during login', async () => {
+        req.body = { email: 'badjson@itu.edu.tr', password: 'Password123!' };
+        
+        const mockUser = {
+            user_id: 6,
+            email: 'badjson@itu.edu.tr',
+            password_hash: 'hashedpassword',
+            status: 'Verified',
+            notification_preferences: '{invalid-json'
+        };
+
+        userModel.findByEmail.mockResolvedValue(mockUser);
+        userModel.getRecentFailedLoginAttempts.mockResolvedValue(0);
+        bcrypt.compare.mockResolvedValue(true);
+        userModel.updateLastLogin.mockResolvedValue({});
+        userModel.setRefreshToken.mockResolvedValue({});
+
+        await authController.login(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: true
+        }));
+    });
+
+    it('should handle database error during register', async () => {
+        // Updated input to pass validation
+        req.body = { 
+            email: 'error@itu.edu.tr', 
+            password: 'Password123!', 
+            passwordConfirmation: 'Password123!', 
+            fullName: 'Error Name', 
+            studentNumber: '2501234', 
+            phoneNumber: '5321234567' 
+        };
+        userModel.findByEmail.mockRejectedValue(new Error('DB Error'));
+
+        await authController.register(req, res, next);
+
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('should handle database error during login', async () => {
+        req.body = { email: 'error@itu.edu.tr', password: 'Password123!' };
+        
+        userModel.findByEmail.mockRejectedValue(new Error('DB Error'));
+
+        await authController.login(req, res, next);
+
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+    
+    it('should handle error during logout', async () => {
+        req.user = { userId: 1 };
+        userModel.setRefreshToken.mockRejectedValue(new Error('DB Error'));
+
+        await authController.logout(req, res, next);
+
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+    
+    it('should succeed logout even if no user in request', async () => {
+        req.user = undefined;
+        await authController.logout(req, res, next);
+        expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('should handle database error during verifyEmail', async () => {
+         req.body = { token: 'valid-token' };
+         userModel.findByVerificationToken.mockRejectedValue(new Error('DB Error'));
+         await authController.verifyEmail(req, res, next);
+         expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('should handle database error during refreshToken', async () => {
+         const jwtUtils = require('../utils/jwtUtils');
+         const token = jwtUtils.generateRefreshToken({ userId: 1, role: 'Student' });
+         req.body = { refreshToken: token };
+         
+         // Mock findById to throw error - verification passed but DB failed
+         userModel.findById.mockRejectedValue(new Error('DB Error'));
+
+         await authController.refreshToken(req, res, next);
+         
+         expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+    
+    it('should handle database error during getMe', async () => {
+         req.user = { userId: 1 };
+         userModel.findById.mockRejectedValue(new Error('DB Error'));
+         await authController.getMe(req, res, next);
+         expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('should handle database error during forgotPassword', async () => {
+        req.body = { email: 'valid@itu.edu.tr' };
+        userModel.findByEmail.mockRejectedValue(new Error('DB Error'));
+        
+        await authController.forgotPassword(req, res, next);
+        
+        // Should return success for security reasons even if error logic logs it
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    });
+    
+    it('should handle database error during resetPassword', async () => {
+        req.body = { token: 'token', newPassword: 'Password123!', confirmPassword: 'Password123!' };
+        userModel.findByPasswordResetToken.mockRejectedValue(new Error('DB Error'));
+        
+        await authController.resetPassword(req, res, next);
+        
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
 });
 

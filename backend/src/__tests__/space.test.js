@@ -28,11 +28,21 @@ jest.mock('../utils/jwtUtils', () => ({
   verifyAccessToken: jest.fn(),
 }));
 
+jest.mock('../services/emailService', () => ({
+  sendBookingCancellationEmail: jest.fn()
+}));
+
+jest.mock('../services/notificationService', () => ({
+  createNotification: jest.fn()
+}));
+
 const request = require('supertest');
 const app = require('../app');
 const recommendationService = require('../services/recommendationService');
 const userModel = require('../models/userModel');
 const bookingModel = require('../models/bookingModel');
+const emailService = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 const { verifyAccessToken } = require('../utils/jwtUtils');
 
 
@@ -83,6 +93,60 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(recommendationService.scoreAndSortSpaces).toHaveBeenCalledWith(mockSpacesRaw, "1");
   });
 
+  it('should filter spaces by capacity and building', async () => {
+    // Mock filtered response
+    const mockSpacesRaw = [
+      { space_id: 1, space_name: 'Big Room', capacity: 20, building_id: 2 }
+    ];
+    const mockCountRaw = { count: '1' };
+
+    // When userId is missing (no auth in request), Controller calls Count then Data
+    pool.query
+      .mockResolvedValueOnce({ rows: [mockCountRaw] }) // Count query first
+      .mockResolvedValueOnce({ rows: mockSpacesRaw }); // Data query second
+
+    recommendationService.scoreAndSortSpaces.mockResolvedValue(mockSpacesRaw);
+
+    // changed buildingId=2 to building=Library (which matches logic)
+    const res = await request(app).get('/api/spaces?minCapacity=15&building=Library');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.spaces[0].spaceName).toBe('Big Room');
+    // Verify query constructed with filters
+    expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE'), 
+        expect.arrayContaining(['15', '%Library%'])
+    );
+  });
+
+  it('should filter spaces by multiple criteria (status, campus, type, capacity range)', async () => {
+    const mockSpacesRaw = [
+      { space_id: 1, space_name: 'Filtered Room', capacity: 15, building_id: 1, room_type: 'Study_Room', noise_level: 'Quiet' }
+    ];
+    // Count query then Data query
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] })
+      .mockResolvedValueOnce({ rows: mockSpacesRaw });
+    
+    recommendationService.scoreAndSortSpaces.mockResolvedValue(mockSpacesRaw);
+
+    const res = await request(app).get('/api/spaces?status=Available&campus=Ayazaga&type=Study_Room&minCapacity=10&maxCapacity=20&noiseLevel=Quiet&includeDeleted=false');
+    
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.spaces).toHaveLength(1);
+    
+    const calls = pool.query.mock.calls;
+    const wasCalledWithFilters = calls.some(call => {
+       const params = call[1];
+       return params && params.includes('Available') && params.includes('%Ayazaga%') && params.includes('Study_Room') && params.includes('Quiet');
+    });
+    expect(wasCalledWithFilters).toBe(true);
+  });
+
+
+  // Date filtering logic is not implemented in getAllSpaces yet.
+  // Removing 'should filter spaces by date availability' test to avoid misleading coverage.
+
   // 2. SEARCH
   it('should search spaces and sort them', async () => {
     const mockSpacesRaw = [{ space_id: 3, space_name: 'Library', status: 'Available' }];
@@ -99,6 +163,20 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(res.statusCode).toEqual(200);
     expect(res.body.data.spaces[0].spaceName).toBe('Library');
     expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('ILIKE'), expect.anything());
+  });
+
+  it('should return empty list when search yields no results', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+      
+      recommendationService.scoreAndSortSpaces.mockResolvedValue([]);
+
+      const res = await request(app).get('/api/spaces/search?q=NonExistent');
+      
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.data.spaces).toEqual([]);
+      expect(res.body.data.pagination.total).toBe(0);
   });
 
   // 3. GET AVAILABILITY
@@ -178,6 +256,88 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(res.body.data.spaceName).toBe('Test Room');
   });
 
+  it('should update a space successfully', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    const updateData = { capacity: 50 };
+    const initialRow = { 
+        space_id: 1, capacity: 10, building_id: 1, room_number: '101',
+        operating_hours_weekday_start: '08:00', operating_hours_weekday_end: '17:00',
+        status: 'Available',
+        space_name: 'Room', floor: 1, room_type: 'Study', noise_level: 'Low', description: 'Desc'
+    };
+    const updatedRow = { ...initialRow, capacity: 50 };
+
+    mockClient.query
+       .mockResolvedValueOnce({ rows: [] }) // BEGIN
+       .mockResolvedValueOnce({ rows: [initialRow] }) // SELECT existing
+       .mockResolvedValueOnce({ rows: [updatedRow] }) // UPDATE
+       .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    const res = await request(app)
+      .put('/api/spaces/1')
+      .set('Authorization', 'Bearer token')
+      .send(updateData);
+    
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.capacity).toBe(50);
+  });
+
+  it('should reject create space with invalid capacity', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    
+    const res = await request(app)
+      .post('/api/spaces')
+      .set('Authorization', 'Bearer token')
+      .send({ capacity: 101, buildingId: 1, roomNumber: '101' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.message).toContain('Capacity must be between');
+  });
+
+  it('should reject create space with duplicate room', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    // Mock unique check to find existing
+    pool.query.mockResolvedValueOnce({ rows: [{ space_id: 99 }] });
+
+    const res = await request(app)
+      .post('/api/spaces')
+      .set('Authorization', 'Bearer token')
+      .send({ capacity: 10, buildingId: 1, roomNumber: '101' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('DUPLICATE_ROOM');
+  });
+
+  it('should reject update space with duplicate room', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    const initialRow = { 
+        space_id: 1, building_id: 1, room_number: '101', capacity: 10,
+        operating_hours_weekday_start: '08:00', operating_hours_weekday_end: '17:00'
+    };
+
+    mockClient.query
+       .mockResolvedValueOnce({ rows: [] }) // BEGIN
+       .mockResolvedValueOnce({ rows: [initialRow] }) // SELECT existing
+       .mockResolvedValueOnce({ rows: [{ space_id: 2 }] }); // Unique Check (Found another space)
+
+    const res = await request(app)
+      .put('/api/spaces/1')
+      .set('Authorization', 'Bearer token')
+      .send({ roomNumber: '102' }); // Changing room number triggers check
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('DUPLICATE_ROOM');
+    // Ensure Rollback called
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   // 5. DELETE (Silme - Admin)
   it('should delete a space successfully', async () => {
     const spaceId = 10;
@@ -255,6 +415,51 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(res.statusCode).toEqual(404);
   });
 
+
+
+  it('should cancel bookings and notify users when space set to Maintenance', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+
+    const initialRow = { 
+        space_id: 1, status: 'Available', building_id: 1, room_number: '101'
+    };
+    const updatedRow = { ...initialRow, status: 'Maintenance' };
+    
+    // Mock Bookings found
+    const mockBookings = [{ bookingId: 10, userId: 1, user: { email: 't@t.com', emailVerified: true, fullName: 'Test' } }];
+    // Since findFutureBySpaceIdWithUser is imported via bookingModel, we mock it there
+    // Ensure bookingModel.findFutureBySpaceIdWithUser is a jest function
+    if (!bookingModel.findFutureBySpaceIdWithUser) bookingModel.findFutureBySpaceIdWithUser = jest.fn();
+    bookingModel.findFutureBySpaceIdWithUser.mockResolvedValue(mockBookings);
+    
+    // Mock findByIdWithSpace for email logic
+    if (!bookingModel.findByIdWithSpace) bookingModel.findByIdWithSpace = jest.fn();
+    bookingModel.findByIdWithSpace.mockResolvedValue({ 
+        ...mockBookings[0], 
+        space: { spaceName: 'Room' },
+        user: mockBookings[0].user
+    });
+
+    mockClient.query
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [initialRow] }) // SELECT existing
+        .mockResolvedValueOnce({ rows: [updatedRow] }) // UPDATE space
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE bookings (cancelled)
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    const res = await request(app)
+      .put('/api/spaces/1')
+      .set('Authorization', 'Bearer token')
+      .send({ status: 'Maintenance' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.message).toContain('bookings were cancelled');
+    // We expect emailService to be called (async, might need waitFor? but here mocked resolved)
+    // Wait a tick for promise to resolve
+    await new Promise(resolve => process.nextTick(resolve));
+    expect(emailService.sendBookingCancellationEmail).toHaveBeenCalled();
+  });
   it('should return 404 when deleting a non-existent space', async () => {
     // Mock Auth
     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
@@ -287,6 +492,105 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
+
+  it('should delete space and cancel bookings with notifications', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    
+    const mockBookings = [{ bookingId: 10, userId: 1, user: { email: 'x@test.com', emailVerified: true, fullName: 'User X' } }];
+    if (!bookingModel.findUpcomingBySpaceIdWithUser) bookingModel.findUpcomingBySpaceIdWithUser = jest.fn();
+    bookingModel.findUpcomingBySpaceIdWithUser.mockResolvedValue(mockBookings);
+    
+    if (!bookingModel.findByIdWithSpace) bookingModel.findByIdWithSpace = jest.fn();
+    bookingModel.findByIdWithSpace.mockResolvedValue({ 
+        ...mockBookings[0], 
+        space: { spaceName: 'Deleted Space' },
+        user: mockBookings[0].user
+    });
+
+    mockClient.query
+       .mockResolvedValueOnce({ rows: [] }) // BEGIN
+       // findUpcomingBySpaceIdWithUser is mocked to not verify client calls
+       .mockResolvedValueOnce({ rows: [{ space_id: 1, status: 'Deleted' }] }) // UPDATE space
+       .mockResolvedValueOnce({ rows: [] }) // UPDATE bookings
+       .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    const res = await request(app)
+      .delete('/api/spaces/1')
+      .set('Authorization', 'Bearer token');
+    
+    expect(res.statusCode).toBe(200);
+    expect(res.body.message).toContain('upcoming bookings were cancelled');
+    
+    await new Promise(resolve => process.nextTick(resolve));
+    expect(emailService.sendBookingCancellationEmail).toHaveBeenCalled();
+  });
+
+  it('should return 500 on delete space error', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    mockClient.query.mockRejectedValueOnce(new Error('Delete Fail'));
+    
+    const res = await request(app).delete('/api/spaces/1').set('Authorization', 'Bearer token');
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('should return 500 if filter options fails', async () => {
+     pool.query.mockRejectedValueOnce(new Error('DB Fail'));
+     const res = await request(app).get('/api/spaces/filters');
+     expect(res.statusCode).toBe(500);
+  });
+  
+  it('should return 500 if stats fails', async () => {
+     pool.query.mockRejectedValueOnce(new Error('DB Fail'));
+     const res = await request(app).get('/api/spaces/stats');
+     expect(res.statusCode).toBe(500);
+  });
+
+  it('should return 500 on create space error', async () => {
+     verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+     userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+     pool.query.mockRejectedValueOnce(new Error('DB Fail'));
+     
+     const res = await request(app)
+       .post('/api/spaces')
+       .set('Authorization', 'Bearer token')
+       .send({ capacity: 10 }); // Valid payload structure to pass validation first?
+     // Actually validation checks capacity range first. If undefined, failure?
+     // Payload: { capacity: 10 } -> Checks capacity (10 ok).
+     // Then Unique Check. pool.query called. Mock Rejected.
+     
+     expect(res.statusCode).toBe(500);
+  });
+
+  it('should return 500 on update space error', async () => {
+    verifyAccessToken.mockReturnValue({ userId: 1, role: 'Administrator' });
+    userModel.findById.mockResolvedValue({ user_id: 1, role: 'Administrator', status: 'Verified' });
+    
+    mockClient.query
+       .mockResolvedValueOnce({ rows: [] }) // BEGIN
+       .mockRejectedValueOnce(new Error('DB Fail')); // SELECT existing
+
+    const res = await request(app)
+      .put('/api/spaces/1')
+      .set('Authorization', 'Bearer token')
+      .send({ capacity: 10 });
+
+    expect(res.statusCode).toBe(500);
+    expect(mockClient.release).toHaveBeenCalled();
+  });
+
+  it('should return 500 on search space error', async () => {
+    pool.query.mockRejectedValueOnce(new Error('DB Fail'));
+    const res = await request(app).get('/api/spaces/search?q=test');
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('should return 500 on availability db error', async () => {
+    pool.query.mockRejectedValueOnce(new Error('DB Fail'));
+    const res = await request(app).get('/api/spaces/1/availability?startDate=2025-01-01&endDate=2025-01-02');
+    expect(res.statusCode).toBe(500);
+  });
   
   // 8. Server Error Handling
   it('should return 500 on db error', async () => {
@@ -298,4 +602,49 @@ describe('Space API Unit Tests (Mock DB)', () => {
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('SERVER_ERROR');
   });
+
+  // 9. Stats & Filters Options
+  it('should return space statistics', async () => {
+      // Mock stats query result
+      const mockStats = {
+          total_spaces: '10',
+          available: '5',
+          maintenance: '1',
+          deleted: '1'
+      };
+      
+      pool.query.mockResolvedValueOnce({ rows: [mockStats] });
+
+      const res = await request(app).get('/api/spaces/stats');
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.totalSpaces).toBe(10);
+      // Removed totalCapacity check as it is not returned by controller
+      expect(res.body.data.available).toBe(5);
+  });
+
+  it('should return filter options', async () => {
+      const mockCampuses = [{ campus_id: 1, campus_name: 'Ayazaga' }];
+      const mockBuildings = [{ building_id: 1, building_name: 'EEB' }];
+      const mockSpaces = [{ space_id: 1, space_name: 'Lab' }];
+      const mockRoomTypes = [{ room_type: 'Study_Room' }];
+      const mockNoiseLevels = [{ noise_level: 'Quiet' }];
+
+      // Controller makes 5 queries
+      pool.query
+        .mockResolvedValueOnce({ rows: mockCampuses })
+        .mockResolvedValueOnce({ rows: mockBuildings })
+        .mockResolvedValueOnce({ rows: mockSpaces })
+        .mockResolvedValueOnce({ rows: mockRoomTypes })
+        .mockResolvedValueOnce({ rows: mockNoiseLevels });
+
+      const res = await request(app).get('/api/spaces/filters');
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.data.buildings[0].building_name).toBe('EEB');
+      expect(res.body.data.roomTypes).toContain('Study_Room');
+      expect(res.body.data.noiseLevels).toContain('Quiet');
+  });
+
 });
