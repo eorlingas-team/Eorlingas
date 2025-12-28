@@ -49,7 +49,11 @@ describe('Profile Controller', () => {
     };
 
     // Mock next function
+    // Mock next function
     next = jest.fn();
+
+    // Mock console.error to avoid improper usage
+    jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   describe('getProfile', () => {
@@ -182,6 +186,25 @@ describe('Profile Controller', () => {
       await profileController.getProfile(req, res, next);
 
       expect(next).toHaveBeenCalledWith(error);
+    });
+    it('should handle corrupt notification preferences in DB', async () => {
+      const mockUser = {
+        user_id: 1,
+        email: 'test@itu.edu.tr',
+        full_name: 'Test User',
+        notification_preferences: '{invalid-json'
+      };
+      
+      userModel.findById.mockResolvedValue(mockUser);
+      await profileController.getProfile(req, res, next);
+      
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+              notificationPreferences: { emailNotifications: true, webNotifications: true } // Default
+          })
+      }));
+      expect(console.error).toHaveBeenCalledWith('Error parsing notification preferences:', expect.any(Error));
     });
   });
 
@@ -505,6 +528,29 @@ describe('Profile Controller', () => {
 
       expect(next).toHaveBeenCalledWith(error);
     });
+    it('should handle corrupt notification preferences in update response', async () => {
+      req.body = { notificationPreferences: { emailNotifications: true } };
+      const mockUser = { user_id: 1, email: 't@t.com' };
+      const updatedMockUser = { 
+          ...mockUser, 
+          notification_preferences: '{invalid-json' 
+      };
+      
+      userModel.findById.mockResolvedValue(mockUser);
+      userModel.update.mockResolvedValue(updatedMockUser);
+      
+      await profileController.updateProfile(req, res, next);
+      
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+              notificationPreferences: { emailNotifications: true, webNotifications: true } // Default
+          })
+      }));
+      expect(console.error).toHaveBeenCalledWith('Error parsing notification preferences:', expect.any(Error));
+    });
+
+
   });
 
   describe('changePassword', () => {
@@ -701,6 +747,36 @@ describe('Profile Controller', () => {
           message: 'Account deleted successfully',
         })
       );
+    });
+
+    it('should delete administrator account successfully if not last', async () => {
+      const mockAdmin = {
+        user_id: 1,
+        email: 'admin@itu.edu.tr',
+        full_name: 'Admin User',
+        role: 'Administrator',
+        status: 'Active'
+      };
+
+      userModel.findById.mockResolvedValue(mockAdmin);
+      pool.query.mockImplementation((query) => {
+        if (typeof query === 'string' && query.includes('SELECT COUNT(*)')) {
+            return { rows: [{ count: '2' }] };
+        }
+        return { rows: [] };
+      });
+      userModel.update.mockResolvedValue({});
+      userModel.clearRefreshToken.mockResolvedValue();
+
+      await profileController.deleteAccount(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: 'Account deleted successfully',
+        })
+      );
+      expect(userModel.update).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'Deleted' }));
     });
 
     it('should return 400 if user is the last administrator', async () => {

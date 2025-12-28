@@ -104,6 +104,12 @@ describe('Report API Unit Tests', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body.error.code).toBe('BAD_REQUEST');
     });
+
+    it('should return 400 if required fields are missing', async () => {
+       const res = await request(app).post('/api/reports').set('Authorization', 'Bearer user-token').send({});
+       expect(res.statusCode).toBe(400);
+       expect(res.body.error.message).toContain('required');
+    });
   });
 
   describe('GET /api/reports (Admin)', () => {
@@ -139,6 +145,42 @@ describe('Report API Unit Tests', () => {
       expect(reportService.getAllReports).toHaveBeenCalledWith({ status: 'Pending' });
     });
   });
+
+  describe('GET /api/reports/pending-count', () => {
+     beforeEach(() => {
+        verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+     });
+     it('should return pending count', async () => {
+        reportModel.countPending.mockResolvedValue(10);
+        const res = await request(app).get('/api/reports/pending-count').set('Authorization', 'Bearer admin-token');
+        expect(res.statusCode).toBe(200);
+        expect(res.body.data.pendingCount).toBe(10);
+     });
+  });
+
+  describe('GET /api/reports/:id (Admin)', () => {
+    beforeEach(() => {
+      verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+    });
+    
+    it('should return report details with user stats', async () => {
+      const reportId = 1;
+      const mockReport = { id: 1, reportedUserId: 2 };
+      const mockStats = { totalReports: 5 };
+      reportService.getReportById.mockResolvedValue(mockReport);
+      reportService.getReportedUserStats.mockResolvedValue(mockStats);
+      
+      const res = await request(app).get(`/api/reports/${reportId}`).set('Authorization', 'Bearer admin-token');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.report).toEqual(mockReport);
+      expect(res.body.data.reportedUserStats).toEqual(mockStats);
+    });
+
+    it('should return 404 if report not found', async () => {
+      reportService.getReportById.mockResolvedValue(null);
+      const res = await request(app).get('/api/reports/999').set('Authorization', 'Bearer admin-token');
+      expect(res.statusCode).toBe(404);
+    });
 
   describe('PUT /api/reports/:id/reviewed', () => {
     beforeEach(() => {
@@ -204,6 +246,56 @@ describe('Report API Unit Tests', () => {
 
       expect(res.statusCode).toBe(200);
       expect(reportService.submitDefense).toHaveBeenCalledWith(token, defenseMessage);
+    });
+    });
+  });
+
+  describe('Global Error Handling', () => {
+    it('should return 500 on createReport error', async () => {
+      verifyAccessToken.mockReturnValue({ userId: mockUserId, role: mockUserRole });
+      reportService.createReport.mockRejectedValue(new Error('Unexpected'));
+      const res = await request(app).post('/api/reports').set('Authorization', 'Bearer t').send({spaceId:1, reportTime:'2025-01-01', message:'LongEnoughMessage'});
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('should return 500 on getAllReports error', async () => {
+        verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+        reportService.getAllReports.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).get('/api/reports').set('Authorization', 'Bearer a');
+        expect(res.statusCode).toBe(500);
+    });
+
+    it('should return 500 on getReportById error', async () => {
+        verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+        reportService.getReportById.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).get('/api/reports/1').set('Authorization', 'Bearer a');
+        expect(res.statusCode).toBe(500);
+    });
+    
+    it('should return 500 on markAsReviewed error', async () => {
+        verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+        reportService.markAsReviewed.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).put('/api/reports/1/reviewed').set('Authorization', 'Bearer a').send({});
+        expect(res.statusCode).toBe(500);
+    });
+
+    it('should return 500 on getReportByToken error', async () => {
+        reportModel.findByDefenseToken.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).get('/api/reports/defense/x');
+        expect(res.statusCode).toBe(500);
+    });
+
+    it('should return 500 on submitDefense error', async () => {
+        reportService.submitDefense.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).post('/api/reports/defense/x').send({defenseMessage: 'LongEnoughMessage'});
+        expect(res.statusCode).toBe(500);
+    });
+
+    it('should return 500 on getPendingCount error', async () => {
+        verifyAccessToken.mockReturnValue({ userId: mockAdminId, role: mockAdminRole });
+        reportModel.countPending.mockRejectedValue(new Error('Fail'));
+        const res = await request(app).get('/api/reports/pending-count').set('Authorization', 'Bearer a');
+        expect(res.statusCode).toBe(500);
     });
   });
 });

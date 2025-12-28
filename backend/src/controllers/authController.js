@@ -322,10 +322,22 @@ const login = async (req, res, next) => {
           console.log(`User ${user.email} auto-restored from suspension`);
           user.status = 'Verified'; // Update local object for the rest of login logic
         } else {
-             console.log(`Suspended user ${user.email} logged in. Suspension until: ${suspendedUntil}`);
+          return res.status(403).json({
+            success: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: `Your account has been suspended until ${suspendedUntil.toLocaleDateString()}. Reason: Administrative Action.`,
+            },
+          });
         }
       } else {
-          console.log(`Permanently suspended user ${user.email} logged in.`);
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Your account has been permanently suspended.',
+          },
+        });
       }
     }
 

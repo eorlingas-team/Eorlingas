@@ -14,8 +14,15 @@ jest.mock('../utils/auditLogger');
 describe('Cron API Unit Tests', () => {
   const validSecret = 'EorlingasCronSecret2025'; // Default fallback
   
+  const OLD_ENV = process.env;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env = { ...OLD_ENV };
+  });
+
+  afterAll(() => {
+    process.env = OLD_ENV;
   });
 
   describe('ALL /api/cron/reminders', () => {
@@ -104,6 +111,43 @@ describe('Cron API Unit Tests', () => {
 
         expect(res.statusCode).toBe(500);
         expect(res.body.error).toBe('Internal server error');
+      });
+
+      describe('Environment Configuration', () => {
+        it('should use configured cron secret', async () => {
+          process.env.CRON_SECRET = 'CustomSecret123';
+          
+          bookingModel.findBookingsNeedingReminder.mockResolvedValue([]);
+          const res = await request(app).get('/api/cron/reminders?secret=CustomSecret123');
+          expect(res.statusCode).toBe(200);
+        });
+
+        it('should use configured reminder interval', async () => {
+          process.env.REMINDER_INTERVAL_MINUTES = '99';
+          bookingModel.findBookingsNeedingReminder.mockResolvedValue([]);
+          
+          // Use default secret since CRON_SECRET is reset by beforeEach/oldEnv if not set
+          // Wait, logic: reset to OLD_ENV which likely has no CRON_SECRET.
+          // So default fallback 'EorlingasCronSecret2025' applies.
+          await request(app).get('/api/cron/reminders?secret=EorlingasCronSecret2025');
+          expect(bookingModel.findBookingsNeedingReminder).toHaveBeenCalledWith(99);
+        });
+
+        it('should use default reminder interval when env var is missing', async () => {
+          delete process.env.REMINDER_INTERVAL_MINUTES;
+          bookingModel.findBookingsNeedingReminder.mockResolvedValue([]);
+          
+          await request(app).get('/api/cron/reminders?secret=EorlingasCronSecret2025');
+          expect(bookingModel.findBookingsNeedingReminder).toHaveBeenCalledWith(70);
+        });
+
+        it('should use default cron secret when env var is missing', async () => {
+            delete process.env.CRON_SECRET;
+            bookingModel.findBookingsNeedingReminder.mockResolvedValue([]);
+            
+            const res = await request(app).get('/api/cron/reminders?secret=EorlingasCronSecret2025');
+            expect(res.statusCode).toBe(200);
+        });
       });
   });
 });

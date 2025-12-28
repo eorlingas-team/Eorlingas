@@ -89,6 +89,18 @@ describe('Notification API Unit Tests', () => {
       expect(res.body.data).toEqual(mockResult);
       expect(notificationService.getUnreadCount).toHaveBeenCalledWith(mockUserId);
     });
+
+    it('should handle service errors', async () => {
+      notificationService.getUnreadCount.mockRejectedValue(new Error('DB Error'));
+
+      const res = await request(app)
+        .get('/api/notifications/unread-count')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('INTERNAL_ERROR');
+    });
   });
 
   describe('PUT /api/notifications/:id/read', () => {
@@ -119,6 +131,18 @@ describe('Notification API Unit Tests', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
+
+    it('should handle service errors', async () => {
+      notificationService.markAsRead.mockRejectedValue(new Error('DB Error'));
+
+      const res = await request(app)
+        .put('/api/notifications/123/read')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('INTERNAL_ERROR');
+    });
   });
 
   describe('PUT /api/notifications/read-all', () => {
@@ -132,6 +156,18 @@ describe('Notification API Unit Tests', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(notificationService.markAllAsRead).toHaveBeenCalledWith(mockUserId);
+    });
+
+    it('should handle service errors', async () => {
+      notificationService.markAllAsRead.mockRejectedValue(new Error('DB Error'));
+
+      const res = await request(app)
+        .put('/api/notifications/read-all')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('INTERNAL_ERROR');
     });
   });
 });
